@@ -24,6 +24,13 @@ MYCFLAGS=
 MYLDFLAGS=
 MYLIBS=
 MYOBJS=
+# Additional interpreter-only objects (for example, a Windows resource).
+MYLUAOBJS=
+MYDLLFLAGS=
+# Empty disables mingw's default link-time and post-link stripping.
+MINGW_STRIP= yes
+# Optional GNU import library emitted by the mingw DLL link.
+LUA_IMPLIB=
 
 # Only VM and library objects own the controlled Windows DLL exports.
 TITAN_DLL_CFLAGS=
@@ -36,6 +43,12 @@ CMCFLAGS=
 PLATS= guess aix bsd c89 freebsd generic ios linux linux-readline macosx mingw posix solaris
 
 LUA_A=	liblua.a
+LUA_LINK= $(LUA_A)
+LUA_IMPLIBFLAGS=
+ifneq ($(LUA_IMPLIB),)
+LUA_LINK= $(LUA_IMPLIB)
+LUA_IMPLIBFLAGS= -Wl,--out-implib,$(LUA_IMPLIB)
+endif
 CORE_O=	lapi.o lcode.o lctype.o ldebug.o ldo.o ldump.o lfunc.o lgc.o llex.o lmem.o lobject.o lopcodes.o lparser.o lstate.o lstring.o ltable.o ltm.o lundump.o lvm.o lzio.o
 LIB_O=	lauxlib.o lbaselib.o lcorolib.o ldblib.o liolib.o lmathlib.o loadlib.o loslib.o lstrlib.o ltablib.o lutf8lib.o linit.o
 BASE_O= $(CORE_O) $(LIB_O) $(MYOBJS)
@@ -46,14 +59,14 @@ LUA_O=	lua.o
 LUAC_T=	luac
 LUAC_O=	luac.o
 
-ALL_O= $(BASE_O) $(LUA_O) $(LUAC_O)
-ALL_T= $(LUA_A) $(LUA_T) $(LUAC_T)
-ALL_A= $(LUA_A)
+ALL_O= $(BASE_O) $(LUA_O) $(LUAC_O) $(MYLUAOBJS)
+ALL_T= $(LUA_A) $(LUA_IMPLIB) $(LUA_T) $(LUAC_T)
+ALL_A= $(LUA_A) $(LUA_IMPLIB)
 
 # Targets start here.
-$(BASE_O): override CFLAGS += $(TITAN_DLL_CFLAGS)
-
 default: $(PLAT)
+
+$(BASE_O): override CFLAGS += $(TITAN_DLL_CFLAGS)
 
 all:	$(ALL_T)
 
@@ -61,15 +74,22 @@ o:	$(ALL_O)
 
 a:	$(ALL_A)
 
+ifneq ($(LUA_IMPLIB),)
+# GNU Make 4.3+ tracks both outputs of the Windows DLL link.
+$(LUA_A) $(LUA_IMPLIB) &: $(BASE_O)
+	$(AR) $(LUA_A) $(BASE_O)
+	$(RANLIB) $(LUA_A)
+else
 $(LUA_A): $(BASE_O)
 	$(AR) $@ $(BASE_O)
 	$(RANLIB) $@
+endif
 
-$(LUA_T): $(LUA_O) $(LUA_A)
-	$(CC) -o $@ $(LDFLAGS) $(LUA_O) $(LUA_A) $(LIBS)
+$(LUA_T): $(LUA_O) $(MYLUAOBJS) $(LUA_A) $(LUA_LINK)
+	$(CC) -o $@ $(LDFLAGS) $(LUA_O) $(MYLUAOBJS) $(LUA_LINK) $(LIBS)
 
-$(LUAC_T): $(LUAC_O) $(LUA_A)
-	$(CC) -o $@ $(LDFLAGS) $(LUAC_O) $(LUA_A) $(LIBS)
+$(LUAC_T): $(LUAC_O) $(LUA_A) $(LUA_LINK)
+	$(CC) -o $@ $(LDFLAGS) $(LUAC_O) $(LUA_LINK) $(LIBS)
 
 test:
 	./$(LUA_T) -v
@@ -136,9 +156,10 @@ Darwin macos macosx:
 
 mingw:
 	$(MAKE) "LUA_A=lua55.dll" "LUA_T=lua.exe" "LUAC_T=luac.exe" \
-	"AR=$(CC) -shared -o" "RANLIB=strip --strip-unneeded" \
+	"AR=$(CC) -shared $(MYDLLFLAGS) $(LUA_IMPLIBFLAGS) -o" \
+	"RANLIB=$(if $(MINGW_STRIP),strip --strip-unneeded,:)" \
 	"SYSCFLAGS=-DLUA_BUILD_AS_DLL" "TITAN_DLL_CFLAGS=-DTITAN_LUA_BUILD_DLL" \
-	"SYSLIBS=" "SYSLDFLAGS=-s" all
+	"SYSLIBS=" "SYSLDFLAGS=$(if $(MINGW_STRIP),-s)" $(ALL)
 
 posix:
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_POSIX"
