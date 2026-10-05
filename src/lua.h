@@ -161,7 +161,6 @@ extern const char lua_ident[];
 #endif
 
 
-
 /*
 ** state manipulation
 */

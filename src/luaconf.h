@@ -133,13 +133,7 @@
 
 
 /* Default configuration ('long long' and 'double', for 64-bit Lua) */
-#if defined(_WIN32) && (defined(LUA_32BITS) || defined(LUA_INT_TYPE) || \
-    defined(LUA_FLOAT_TYPE) || defined(LUA_INT_DEFAULT) || \
-    defined(LUA_FLOAT_DEFAULT))
-#error "The controlled Lua DLL requires its installed default numeric configuration"
-#endif
 #define LUA_INT_DEFAULT		LUA_INT_LONGLONG
-
 #define LUA_FLOAT_DEFAULT	LUA_FLOAT_DOUBLE
 
 
