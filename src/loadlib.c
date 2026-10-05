@@ -99,6 +99,52 @@ static lua_CFunction lsys_sym (lua_State *L, void *lib, const char *sym);
 */
 
 #include <dlfcn.h>
+#include <limits.h>
+#include <unistd.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
+
+#undef setprogdir
+
+
+/*
+** Replace LUA_EXEC_DIR in the path on top of the stack with the prefix
+** containing the executable's bin directory. Resolve the executable first
+** so a symlink used to launch Lua does not change its installation root.
+*/
+static void setprogdir (lua_State *L) {
+  char exe_path[PATH_MAX + 1];
+  char prefix_path[PATH_MAX + 1];
+  int level;
+#if defined(__APPLE__)
+  uint32_t size = sizeof(exe_path);
+  if (_NSGetExecutablePath(exe_path, &size) != 0)
+    luaL_error(L, "executable path exceeds buffer size");
+#else
+  ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path));
+  if (len < 0)
+    luaL_error(L, "error reading /proc/self/exe");
+  if ((size_t)len >= sizeof(exe_path))
+    luaL_error(L, "executable path exceeds buffer size");
+  exe_path[len] = '\0';
+#endif
+  if (realpath(exe_path, prefix_path) == NULL)
+    luaL_error(L, "error resolving executable path");
+  /* Remove the executable name and bin directory, keeping / at the root. */
+  for (level = 0; level < 2; level++) {
+    char *last = strrchr(prefix_path, '/');
+    if (last == NULL)
+      luaL_error(L, "executable path has no path separator");
+    else if (last == prefix_path)
+      last[1] = '\0';
+    else
+      *last = '\0';
+  }
+  luaL_gsub(L, lua_tostring(L, -1), LUA_EXEC_DIR, prefix_path);
+  lua_remove(L, -2);  /* remove original string */
+}
 
 
 static void lsys_unloadlib (void *lib) {
