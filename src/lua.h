@@ -154,7 +154,11 @@ typedef void (*lua_Hook) (lua_State *L, lua_Debug *ar);
 /*
 ** RCS ident string
 */
+#if defined(_WIN32)
+LUA_API extern const char lua_ident[];
+#else
 extern const char lua_ident[];
+#endif
 
 
 /*

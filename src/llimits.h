@@ -310,6 +310,14 @@ typedef unsigned long l_uint32;
 ** without support give a warning about it. To avoid these warnings,
 ** change to the default definition.
 */
+/* Titan's configured SDK exposes pinned Lua internals, including data.
+** Only the Lua DLL build defines TITAN_LUA_BUILD_DLL. */
+#if defined(_WIN32)
+#define LUAI_FUNC LUA_API extern
+#define LUAI_DDEC(dec) LUA_API extern dec
+#define LUAI_DDEF LUA_API
+#endif
+
 #if !defined(LUAI_FUNC)
 
 #if defined(__GNUC__) && ((__GNUC__*100 + __GNUC_MINOR__) >= 302) && \
