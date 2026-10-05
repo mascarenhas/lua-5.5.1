@@ -133,7 +133,13 @@
 
 
 /* Default configuration ('long long' and 'double', for 64-bit Lua) */
+#if defined(_WIN32) && (defined(LUA_32BITS) || defined(LUA_INT_TYPE) || \
+    defined(LUA_FLOAT_TYPE) || defined(LUA_INT_DEFAULT) || \
+    defined(LUA_FLOAT_DEFAULT))
+#error "The controlled Lua DLL requires its installed default numeric configuration"
+#endif
 #define LUA_INT_DEFAULT		LUA_INT_LONGLONG
+
 #define LUA_FLOAT_DEFAULT	LUA_FLOAT_DOUBLE
 
 
@@ -220,22 +226,21 @@
 ** In Windows, any exclamation mark ('!') in the path is replaced by the
 ** path of the directory of the executable file of the current process.
 */
-#define LUA_LDIR	"!\\lua\\"
-#define LUA_CDIR	"!\\"
-#define LUA_SHRDIR	"!\\..\\share\\lua\\" LUA_VDIR "\\"
+/* Keep stock Windows '!' expansion relative to the running EXE directory. */
+#define LUA_LDIR	"!\\..\\share\\lua\\" LUA_VDIR "\\"
+#define LUA_CDIR	"!\\..\\lib\\lua\\" LUA_VDIR "\\"
+#define LUA_TITAN_CDIR	"!\\..\\lib\\titan\\0.6\\"
+#define LUA_SHRDIR	LUA_LDIR
 
 #if !defined(LUA_PATH_DEFAULT)
 #define LUA_PATH_DEFAULT  \
-		LUA_LDIR "?.lua;"  LUA_LDIR "?\\init.lua;" \
-		LUA_CDIR "?.lua;"  LUA_CDIR "?\\init.lua;" \
-		LUA_SHRDIR "?.lua;"  LUA_SHRDIR "?\\init.lua;" \
+		LUA_LDIR "?.lua;" LUA_LDIR "?\\init.lua;" \
 		".\\?.lua;" ".\\?\\init.lua"
 #endif
 
 #if !defined(LUA_CPATH_DEFAULT)
 #define LUA_CPATH_DEFAULT \
-		LUA_CDIR "?.dll;" \
-		LUA_CDIR "..\\lib\\lua\\"  LUA_VDIR "\\?.dll;" \
+		LUA_TITAN_CDIR "?.dll;" LUA_CDIR "?.dll;" \
 		LUA_CDIR "loadall.dll;" ".\\?.dll"
 #endif
 
@@ -303,9 +308,14 @@
 ** the libraries, you may want to use the following definition (define
 ** LUA_BUILD_AS_DLL to get it).
 */
+/* This SDK belongs to one controlled Lua DLL. LUA_CORE and LUA_LIB describe
+** source roles, not DLL ownership: consumers may define either of them. */
+#if defined(_WIN32) && !defined(LUA_BUILD_AS_DLL)
+#define LUA_BUILD_AS_DLL
+#endif
 #if defined(LUA_BUILD_AS_DLL)	/* { */
 
-#if defined(LUA_CORE) || defined(LUA_LIB)	/* { */
+#if defined(TITAN_LUA_BUILD_DLL)	/* { */
 #define LUA_API __declspec(dllexport)
 #else						/* }{ */
 #define LUA_API __declspec(dllimport)
@@ -323,11 +333,18 @@
 */
 #define LUALIB_API	LUA_API
 
+/* Module opening definitions export independently of calls into Lua.
+** lualib.h uses LUALIB_API for declarations of Lua's built-in openers. */
+#if defined(_WIN32)
 #if defined(__cplusplus)
-/* Lua uses the "C name" when calling open functions */
-#define LUAMOD_API	extern "C"
+#define LUAMOD_API extern "C" __declspec(dllexport)
 #else
-#define LUAMOD_API	LUA_API
+#define LUAMOD_API __declspec(dllexport)
+#endif
+#elif defined(__cplusplus)
+#define LUAMOD_API extern "C"
+#else
+#define LUAMOD_API LUA_API
 #endif
 
 /* }================================================================== */
