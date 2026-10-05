@@ -315,7 +315,8 @@
 #endif
 #if defined(LUA_BUILD_AS_DLL)	/* { */
 
-#if defined(TITAN_LUA_BUILD_DLL)	/* { */
+#if defined(TITAN_LUA_BUILD_DLL) || \
+    (!defined(_WIN32) && (defined(LUA_CORE) || defined(LUA_LIB)))	/* { */
 #define LUA_API __declspec(dllexport)
 #else						/* }{ */
 #define LUA_API __declspec(dllimport)

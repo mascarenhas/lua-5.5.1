@@ -25,6 +25,9 @@ MYLDFLAGS=
 MYLIBS=
 MYOBJS=
 
+# Only VM and library objects own the controlled Windows DLL exports.
+TITAN_DLL_CFLAGS=
+
 # Special flags for compiler modules; -Os reduces code size.
 CMCFLAGS= 
 
@@ -48,6 +51,8 @@ ALL_T= $(LUA_A) $(LUA_T) $(LUAC_T)
 ALL_A= $(LUA_A)
 
 # Targets start here.
+$(BASE_O): override CFLAGS += $(TITAN_DLL_CFLAGS)
+
 default: $(PLAT)
 
 all:	$(ALL_T)
@@ -130,10 +135,10 @@ Darwin macos macosx:
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_MACOSX" SYSLIBS="-lreadline"
 
 mingw:
-	$(MAKE) "LUA_A=lua55.dll" "LUA_T=lua.exe" \
+	$(MAKE) "LUA_A=lua55.dll" "LUA_T=lua.exe" "LUAC_T=luac.exe" \
 	"AR=$(CC) -shared -o" "RANLIB=strip --strip-unneeded" \
-	"SYSCFLAGS=-DLUA_BUILD_AS_DLL" "SYSLIBS=" "SYSLDFLAGS=-s" lua.exe
-	$(MAKE) "LUAC_T=luac.exe" luac.exe
+	"SYSCFLAGS=-DLUA_BUILD_AS_DLL" "TITAN_DLL_CFLAGS=-DTITAN_LUA_BUILD_DLL" \
+	"SYSLIBS=" "SYSLDFLAGS=-s" all
 
 posix:
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_POSIX"

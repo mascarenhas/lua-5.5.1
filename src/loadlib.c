@@ -178,7 +178,69 @@ static lua_CFunction lsys_sym (lua_State *L, void *lib, const char *sym) {
 ** =======================================================================
 */
 
-#include "titan_windows_loadlib.h"
+#include <windows.h>
+
+
+/*
+** optional flags for LoadLibraryEx
+*/
+#if !defined(LUA_LLE_FLAGS)
+#define LUA_LLE_FLAGS	0
+#endif
+
+
+#undef setprogdir
+
+
+/*
+** Replace in the path (on the top of the stack) any occurrence
+** of LUA_EXEC_DIR with the executable's path.
+*/
+static void setprogdir (lua_State *L) {
+  char buff[MAX_PATH + 1];
+  char *lb;
+  DWORD nsize = sizeof(buff)/sizeof(char);
+  DWORD n = GetModuleFileNameA(NULL, buff, nsize);  /* get exec. name */
+  if (n == 0 || n == nsize || (lb = strrchr(buff, '\\')) == NULL)
+    luaL_error(L, "unable to get ModuleFileName");
+  else {
+    *lb = '\0';  /* cut name on the last '\\' to get the path */
+    luaL_gsub(L, lua_tostring(L, -1), LUA_EXEC_DIR, buff);
+    lua_remove(L, -2);  /* remove original string */
+  }
+}
+
+
+
+
+static void pusherror (lua_State *L) {
+  int error = GetLastError();
+  char buffer[128];
+  if (FormatMessageA(FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM,
+      NULL, error, 0, buffer, sizeof(buffer)/sizeof(char), NULL))
+    lua_pushstring(L, buffer);
+  else
+    lua_pushfstring(L, "system error %d\n", error);
+}
+
+static void lsys_unloadlib (void *lib) {
+  FreeLibrary((HMODULE)lib);
+}
+
+
+static void *lsys_load (lua_State *L, const char *path, int seeglb) {
+  HMODULE lib = LoadLibraryExA(path, NULL, LUA_LLE_FLAGS);
+  (void)(seeglb);  /* not used: symbols are 'global' by default */
+  if (lib == NULL) pusherror(L);
+  return lib;
+}
+
+
+static lua_CFunction lsys_sym (lua_State *L, void *lib, const char *sym) {
+  lua_CFunction f = cast_Lfunc(GetProcAddress((HMODULE)lib, sym));
+  if (f == NULL) pusherror(L);
+  return f;
+}
 
 /* }====================================================== */
 
@@ -505,11 +567,7 @@ static const char *findfile (lua_State *L, const char *name,
   path = lua_tostring(L, -1);
   if (l_unlikely(path == NULL))
     luaL_error(L, "'package.%s' must be a string", pname);
-#if defined(LUA_DL_DLL)
-  path = titan_win_checkstring(L, -1);
-#endif
   return searchpath(L, name, path, ".", dirsep);
-
 }
 
 

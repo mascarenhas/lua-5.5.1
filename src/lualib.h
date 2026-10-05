@@ -14,6 +14,11 @@
 /* version suffix for environment variable names */
 #define LUA_VERSUFFIX          "_" LUA_VERSION_MAJOR "_" LUA_VERSION_MINOR
 
+/* Built-in openers retain their C names in C++ consumers. */
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 #define LUA_GLIBK		1
 LUALIB_API int (luaopen_base) (lua_State *L);
 
@@ -53,6 +58,11 @@ LUALIB_API int (luaopen_table) (lua_State *L);
 #define LUA_UTF8LIBNAME	"utf8"
 #define LUA_UTF8LIBK	(LUA_TABLIBK << 1)
 LUALIB_API int (luaopen_utf8) (lua_State *L);
+
+
+#if defined(__cplusplus)
+}
+#endif
 
 
 /* open selected libraries */
