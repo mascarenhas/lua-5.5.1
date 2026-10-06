@@ -7,7 +7,7 @@
 PLAT= guess
 
 CC= gcc -std=gnu99
-CFLAGS= -O2 -Wall -Wextra $(SYSCFLAGS) $(MYCFLAGS)
+CFLAGS= -O2 -Wall -Wextra -DTITAN_VDIR=\"$(TITAN_LIBRARY_VERSION)\" $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= $(SYSLDFLAGS) $(MYLDFLAGS)
 LIBS= -lm $(SYSLIBS) $(MYLIBS)
 
@@ -123,35 +123,22 @@ guess:
 	@echo Guessing `$(UNAME)`
 	@$(MAKE) `$(UNAME)`
 
-AIX aix:
-	$(MAKE) $(ALL) CC="xlc" CFLAGS="-O2 -DLUA_USE_POSIX -DLUA_USE_DLOPEN" SYSLIBS="-ldl" SYSLDFLAGS="-brtl -bexpall"
+check-titan:
+	$(if $(TITAN_LIBRARY_VERSION),,$(error Error: TITAN_LIBRARY_VERSION environment variable is required))
 
-bsd:
+bsd: check-titan
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_POSIX -DLUA_USE_DLOPEN" SYSLIBS="-Wl,-E"
 
-c89:
-	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_C89" CC="gcc -std=c89"
-	@echo ''
-	@echo '*** C89 does not guarantee 64-bit integers for Lua.'
-	@echo '*** Make sure to compile all external Lua libraries'
-	@echo '*** with LUA_USE_C89 to ensure consistency'
-	@echo ''
-
-FreeBSD NetBSD OpenBSD freebsd:
+FreeBSD NetBSD OpenBSD freebsd: check-titan
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_LINUX -DLUA_USE_READLINE -I/usr/include/edit" SYSLIBS="-Wl,-E -ledit" CC="cc"
 
-generic: $(ALL)
-
-ios:
-	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_IOS"
-
-Linux linux:
+Linux linux: check-titan
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_LINUX" SYSLIBS="-Wl,-E -ldl"
 
-linux-readline:
+linux-readline: check-titan
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_LINUX -DLUA_USE_READLINE" SYSLIBS="-Wl,-E -ldl -lreadline"
 
-Darwin macos macosx:
+Darwin macos macosx: check-titan
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_MACOSX" SYSLIBS="-lreadline"
 
 mingw:
@@ -161,14 +148,8 @@ mingw:
 	"SYSCFLAGS=-DLUA_BUILD_AS_DLL" "TITAN_DLL_CFLAGS=-DTITAN_LUA_BUILD_DLL" \
 	"SYSLIBS=" "SYSLDFLAGS=$(if $(MINGW_STRIP),-s)" $(ALL)
 
-posix:
-	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_POSIX"
-
-SunOS solaris:
-	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_POSIX -DLUA_USE_DLOPEN -D_REENTRANT" SYSLIBS="-ldl"
-
 # Targets that do not create files (not all makes understand .PHONY).
-.PHONY: all $(PLATS) help test clean default o a depend echo
+.PHONY: all $(PLATS) help test clean default o a depend echo check-titan
 
 # Compiler modules may use special flags.
 llex.o:
