@@ -236,7 +236,7 @@
 #define LUA_CPATH_DEFAULT \
 		LUA_CDIR "?.dll;" \
 		LUA_CDIR "..\\lib\\lua\\"  LUA_VDIR "\\?.dll;" \
-		LUA_CDIR "..\\lib\\titan\\" TITAN_VDIR "\\?.dll;"
+		LUA_CDIR "..\\lib\\titan\\" TITAN_VDIR "\\?.dll;" \
 		LUA_CDIR "loadall.dll;" ".\\?.dll"
 #endif
 

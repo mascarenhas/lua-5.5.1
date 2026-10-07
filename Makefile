@@ -14,15 +14,23 @@ INSTALL_TOP= $(PREFIX)
 
 # How to install. If your install program does not support "-p", then
 # you may have to run ranlib on the installed liblua.a.
+# MSYS shells use Unix utilities; native Windows shells use built-ins.
 ifeq ($(OS),Windows_NT)
-	INSTALL_BIN= $(INSTALL_TOP)\\bin
-	INSTALL_INC= $(INSTALL_TOP)\\include
-	INSTALL_LIB= $(INSTALL_TOP)\\lib
-	INSTALL_SRC= $(INSTALL_TOP)\\src\\lua-$R
-	INSTALL_MAN= $(INSTALL_TOP)\\man\\man1
-	INSTALL_LMOD= $(INSTALL_TOP)\\share\\lua\\$V
-	INSTALL_CMOD= $(INSTALL_TOP)\\lib\\lua\\$V
-	INSTALL_TMOD= $(INSTALL_TOP)\\lib\\titan\\$(TITAN_LIBRARY_VERSION)
+ifeq ($(findstring sh,$(notdir $(SHELL))),)
+	INSTALL_NATIVE_WINDOWS= yes
+endif
+endif
+
+ifeq ($(INSTALL_NATIVE_WINDOWS),yes)
+	INSTALL_TOP= $(subst /,\,$(PREFIX))
+	INSTALL_BIN= $(INSTALL_TOP)\bin
+	INSTALL_INC= $(INSTALL_TOP)\include
+	INSTALL_LIB= $(INSTALL_TOP)\lib
+	INSTALL_SRC= $(INSTALL_TOP)\src\lua-$R
+	INSTALL_MAN= $(INSTALL_TOP)\man\man1
+	INSTALL_LMOD= $(INSTALL_TOP)\share\lua\$V
+	INSTALL_CMOD= $(INSTALL_TOP)\lib\lua\$V
+	INSTALL_TMOD= $(INSTALL_TOP)\lib\titan\$(TITAN_LIBRARY_VERSION)
 
     INSTALL= copy /Y
     INSTALL_EXEC= $(INSTALL)
@@ -77,23 +85,28 @@ check-titan: dummy
 	$(if $(TITAN_LIBRARY_VERSION),,$(error Error: TITAN_LIBRARY_VERSION environment variable is required))
 
 install: check-prefix check-titan
-ifeq ($(OS),Windows_NT)
-	@if not exist $(INSTALL_BIN) mkdir $(INSTALL_BIN)
-	@if not exist $(INSTALL_INC) mkdir $(INSTALL_INC)
-	@if not exist $(INSTALL_LIB) mkdir $(INSTALL_LIB)
-	@if not exist $(INSTALL_SRC) mkdir $(INSTALL_SRC)
-	@if not exist $(INSTALL_MAN) mkdir $(INSTALL_MAN)
-	@if not exist $(INSTALL_LMOD) mkdir $(INSTALL_LMOD)
-	@if not exist $(INSTALL_CMOD) mkdir $(INSTALL_CMOD)
-	@if not exist $(INSTALL_TMOD) mkdir $(INSTALL_TMOD)
+ifeq ($(INSTALL_NATIVE_WINDOWS),yes)
+	@if not exist "$(INSTALL_BIN)" mkdir "$(INSTALL_BIN)"
+	@if not exist "$(INSTALL_INC)" mkdir "$(INSTALL_INC)"
+	@if not exist "$(INSTALL_LIB)" mkdir "$(INSTALL_LIB)"
+	@if not exist "$(INSTALL_SRC)" mkdir "$(INSTALL_SRC)"
+	@if not exist "$(INSTALL_MAN)" mkdir "$(INSTALL_MAN)"
+	@if not exist "$(INSTALL_LMOD)" mkdir "$(INSTALL_LMOD)"
+	@if not exist "$(INSTALL_CMOD)" mkdir "$(INSTALL_CMOD)"
+	@if not exist "$(INSTALL_TMOD)" mkdir "$(INSTALL_TMOD)"
+	@cd src && for %%F in ($(TO_BIN)) do @$(INSTALL_EXEC) "%%F" "$(INSTALL_BIN)" >nul || exit /b 1
+	@cd src && for %%F in ($(TO_INC)) do @$(INSTALL_DATA) "%%F" "$(INSTALL_INC)" >nul || exit /b 1
+	@cd src && for %%F in ($(TO_LIB)) do @$(INSTALL_DATA) "%%F" "$(INSTALL_LIB)" >nul || exit /b 1
+	@cd src && for %%F in ($(TO_SRC)) do @$(INSTALL_DATA) "%%F" "$(INSTALL_SRC)" >nul || exit /b 1
+	@cd doc && for %%F in ($(TO_MAN)) do @$(INSTALL_DATA) "%%F" "$(INSTALL_MAN)" >nul || exit /b 1
 else
 	@mkdir -p $(INSTALL_BIN) $(INSTALL_INC) $(INSTALL_LIB) $(INSTALL_SRC) $(INSTALL_MAN) $(INSTALL_LMOD) $(INSTALL_CMOD) $(INSTALL_TMOD)
-endif
 	cd src && $(INSTALL_EXEC) $(TO_BIN) $(INSTALL_BIN)
 	cd src && $(INSTALL_DATA) $(TO_INC) $(INSTALL_INC)
 	cd src && $(INSTALL_DATA) $(TO_LIB) $(INSTALL_LIB)
 	cd src && $(INSTALL_DATA) $(TO_SRC) $(INSTALL_SRC)
 	cd doc && $(INSTALL_DATA) $(TO_MAN) $(INSTALL_MAN)
+endif
 
 # make may get confused with install/ if it does not support .PHONY.
 dummy:
@@ -126,6 +139,6 @@ pc:
 	@echo "includedir=$(INSTALL_INC)"
 
 # Targets that do not create files (not all makes understand .PHONY).
-.PHONY: all $(PLATS) help test clean install uninstall local dummy echo pc check-prefix
+.PHONY: all $(PLATS) help test clean install uninstall local dummy echo pc check-prefix check-titan
 
 # (end of Makefile)
