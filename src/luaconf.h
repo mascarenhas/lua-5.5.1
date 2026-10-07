@@ -336,7 +336,7 @@
 #endif
 
 /* Module opening definitions export independently of calls into Lua.
-** lualib.h uses LUALIB_API for declarations of Lua's built-in openers. */
+** Lua-owned declarations use LUA_API, including its built-in openers. */
 #if defined(_WIN32)
 #if defined(__cplusplus)
 #define LUAMOD_API extern "C" __declspec(dllexport)
