@@ -109,6 +109,13 @@ ifeq ($(INSTALL_NATIVE_WINDOWS),yes)
 	@cd src && for %%F in ($(TO_LIB)) do @$(INSTALL_DATA) "%%F" "$(INSTALL_LIB)" >nul || exit /b 1
 	@cd src && for %%F in ($(TO_SRC)) do @$(INSTALL_DATA) "%%F" "$(INSTALL_SRC)" >nul || exit /b 1
 	@cd doc && for %%F in ($(TO_MAN)) do @$(INSTALL_DATA) "%%F" "$(INSTALL_MAN)" >nul || exit /b 1
+else ifeq ($(OS),Windows_NT)
+	@mkdir -p "$(INSTALL_BIN)" "$(INSTALL_INC)" "$(INSTALL_LIB)" "$(INSTALL_SRC)" "$(INSTALL_MAN)" "$(INSTALL_LMOD)" "$(INSTALL_CMOD)" "$(INSTALL_TMOD)"
+	cd src && $(INSTALL_EXEC) $(TO_BIN) "$(INSTALL_BIN)"
+	cd src && $(INSTALL_DATA) $(TO_INC) "$(INSTALL_INC)"
+	cd src && $(INSTALL_DATA) $(TO_LIB) "$(INSTALL_LIB)"
+	cd src && $(INSTALL_DATA) $(TO_SRC) "$(INSTALL_SRC)"
+	cd doc && $(INSTALL_DATA) $(TO_MAN) "$(INSTALL_MAN)"
 else
 	@mkdir -p $(INSTALL_BIN) $(INSTALL_INC) $(INSTALL_LIB) $(INSTALL_SRC) $(INSTALL_MAN) $(INSTALL_LMOD) $(INSTALL_CMOD) $(INSTALL_TMOD)
 	cd src && $(INSTALL_EXEC) $(TO_BIN) $(INSTALL_BIN)
