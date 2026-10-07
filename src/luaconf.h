@@ -328,7 +328,12 @@
 /*
 ** More often than not the libs go together with the core.
 */
-#define LUALIB_API	LUA_API
+#if defined(_WIN32) && defined(LUA_LIB) && !defined(TITAN_LUA_BUILD_DLL)
+/* Third-party libraries use this mark for their own exported functions. */
+#define LUALIB_API __declspec(dllexport)
+#else
+#define LUALIB_API LUA_API
+#endif
 
 /* Module opening definitions export independently of calls into Lua.
 ** lualib.h uses LUALIB_API for declarations of Lua's built-in openers. */
