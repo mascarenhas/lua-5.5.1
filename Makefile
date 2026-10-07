@@ -16,7 +16,12 @@ INSTALL_TOP= $(PREFIX)
 # you may have to run ranlib on the installed liblua.a.
 # MSYS shells use Unix utilities; native Windows shells use built-ins.
 ifeq ($(OS),Windows_NT)
-ifeq ($(findstring sh,$(notdir $(SHELL))),)
+# Native GNU Make defaults to sh.exe even when it falls back to cmd.exe.
+ifeq ($(SHELL),sh.exe)
+ifneq ($(origin SHELL),command line)
+	INSTALL_NATIVE_WINDOWS= yes
+endif
+else ifeq ($(findstring sh,$(notdir $(SHELL))),)
 	INSTALL_NATIVE_WINDOWS= yes
 endif
 endif
@@ -83,6 +88,11 @@ check-prefix: dummy
 
 check-titan: dummy
 	$(if $(TITAN_LIBRARY_VERSION),,$(error Error: TITAN_LIBRARY_VERSION environment variable is required))
+
+ifeq ($(INSTALL_NATIVE_WINDOWS),yes)
+install: SHELL= cmd.exe
+install: .SHELLFLAGS= /c
+endif
 
 install: check-prefix check-titan
 ifeq ($(INSTALL_NATIVE_WINDOWS),yes)
