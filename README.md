@@ -2,42 +2,42 @@
 
 This is Lua 5.5.1, released on 24 Jul 2026, intended to compile Lua with default search paths that make it work better with Titan.
 
-Additionaly, for Windows mingw builds (the only ones currently tested with Titan 0.6), compiles `lua55.dll` and its import library in a way that the internal Lua functions that Titan uses are exported.
+Additionaly, for Windows mingw builds (the only ones currently tested with Titan 0.6), compiles `lua55.dll` and its import library from stock sources with `-DLUA_BUILD_AS_DLL`, linked with `-Wl,--export-all-symbols`, so the internal Lua functions and data that Titan uses are also exported.
 
 In Linux and MacOS Titan by default expects static Lua builds, so it can get to these functions by just linking with the regular Lua archive file.
 
 ## Installation
 
-Either `export TITAN_LIBRARY_VERSION=0.6` or pass `TITAN_LIBRARY_VERSION=0.6` to the make command when building across the supported platforms:
+Build for the supported platforms with the usual targets:
 
 ```bash
-$ TITAN_LIBRARY_VERSION=0.6 make linux-readline
+$ make linux-readline
 ```
 
 ```bash
-$ TITAN_LIBRARY_VERSION=0.6 make linux
+$ make linux
 ```
 
 ```bash
-$ TITAN_LIBRARY_VERSION=0.6 make macosx
+$ make macosx
 ```
 
 ```cmd
-> set TITAN_LIBRARY_VERSION=0.6 && make mingw
+> make mingw
 ```
 
-Then pass a `PREFIX` and the `TITAN_LIBRARY_VERSION` (if not exported) to `make install` to install the Lua files to that prefix:
+Then pass a `PREFIX` to `make install` to install the Lua files to that prefix:
 
 For Linux/MacOS:
 
 ```bash
-$ PREFIX=$HOME/.local TITAN_LIBRARY_VERSION=0.6 make install
+$ PREFIX=$HOME/.local make install
 ```
 
 For Windows:
 
 ```cmd
-> set PREFIX=%USERPROFILE%\.local && set TITAN_LIBRARY_VERSION=0.6 && make install
+> set PREFIX=%USERPROFILE%\.local && make install
 ```
 
-Even in Linux/MacOS you can compile once and install in different paths, as Lua will derive its search paths from where it is running, similar to what the stock Lua build does in Windows.
+Even in Linux/MacOS you can compile once and install in different paths, as Lua will derive its search paths from where it is running, similar to what the stock Lua build does in Windows. There, as on Windows, `!` in a search path means the directory of the running executable, and the defaults are rooted at `!/../` (for example `!/../lib/lua/5.5/?.so`).

@@ -32,9 +32,6 @@
 
 
 
-#if defined(_WIN32)
-LUA_API
-#endif
 const char lua_ident[] =
   "$LuaVersion: " LUA_COPYRIGHT " $"
   "$LuaAuthors: " LUA_AUTHORS " $";

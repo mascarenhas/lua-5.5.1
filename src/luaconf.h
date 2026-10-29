@@ -196,8 +196,7 @@
 ** LUA_PATH_SEP is the character that separates templates in a path.
 ** LUA_PATH_MARK is the string that marks the substitution points in a
 ** template.
-** LUA_EXEC_DIR in a Windows path is replaced by the executable's
-** directory.
+** LUA_EXEC_DIR in a path is replaced by the executable's directory.
 */
 #define LUA_PATH_SEP            ";"
 #define LUA_PATH_MARK           "?"
@@ -236,16 +235,14 @@
 #define LUA_CPATH_DEFAULT \
 		LUA_CDIR "?.dll;" \
 		LUA_CDIR "..\\lib\\lua\\"  LUA_VDIR "\\?.dll;" \
-		LUA_CDIR "..\\lib\\titan\\" TITAN_VDIR "\\?.dll;" \
 		LUA_CDIR "loadall.dll;" ".\\?.dll"
 #endif
 
 #else			/* }{ */
 
-#define LUA_ROOT "!/"
+#define LUA_ROOT	"!/../"
 #define LUA_LDIR	LUA_ROOT "share/lua/" LUA_VDIR "/"
 #define LUA_CDIR	LUA_ROOT "lib/lua/" LUA_VDIR "/"
-#define LUA_TITAN_CDIR	LUA_ROOT "lib/titan/0.6/"
 
 #if !defined(LUA_PATH_DEFAULT)
 #define LUA_PATH_DEFAULT  \
@@ -256,7 +253,7 @@
 
 #if !defined(LUA_CPATH_DEFAULT)
 #define LUA_CPATH_DEFAULT \
-		LUA_CDIR "?.so;" LUA_CDIR "loadall.so;" LUA_ROOT "lib/titan/" TITAN_VDIR "/?.so;" "./?.so"
+		LUA_CDIR "?.so;" LUA_CDIR "loadall.so;" "./?.so"
 #endif
 
 #endif			/* } */
@@ -304,15 +301,9 @@
 ** the libraries, you may want to use the following definition (define
 ** LUA_BUILD_AS_DLL to get it).
 */
-/* This SDK belongs to one controlled Lua DLL. LUA_CORE and LUA_LIB describe
-** source roles, not DLL ownership: consumers may define either of them. */
-#if defined(_WIN32) && !defined(LUA_BUILD_AS_DLL)
-#define LUA_BUILD_AS_DLL
-#endif
 #if defined(LUA_BUILD_AS_DLL)	/* { */
 
-#if defined(TITAN_LUA_BUILD_DLL) || \
-    (!defined(_WIN32) && (defined(LUA_CORE) || defined(LUA_LIB)))	/* { */
+#if defined(LUA_CORE) || defined(LUA_LIB)	/* { */
 #define LUA_API __declspec(dllexport)
 #else						/* }{ */
 #define LUA_API __declspec(dllimport)
@@ -328,25 +319,13 @@
 /*
 ** More often than not the libs go together with the core.
 */
-#if defined(_WIN32) && defined(LUA_LIB) && !defined(TITAN_LUA_BUILD_DLL)
-/* Third-party libraries use this mark for their own exported functions. */
-#define LUALIB_API __declspec(dllexport)
-#else
-#define LUALIB_API LUA_API
-#endif
+#define LUALIB_API	LUA_API
 
-/* Module opening definitions export independently of calls into Lua.
-** Lua-owned declarations use LUA_API, including its built-in openers. */
-#if defined(_WIN32)
 #if defined(__cplusplus)
-#define LUAMOD_API extern "C" __declspec(dllexport)
+/* Lua uses the "C name" when calling open functions */
+#define LUAMOD_API	extern "C"
 #else
-#define LUAMOD_API __declspec(dllexport)
-#endif
-#elif defined(__cplusplus)
-#define LUAMOD_API extern "C"
-#else
-#define LUAMOD_API LUA_API
+#define LUAMOD_API	LUA_API
 #endif
 
 /* }================================================================== */
