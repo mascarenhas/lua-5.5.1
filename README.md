@@ -8,36 +8,36 @@ In Linux and MacOS Titan by default expects static Lua builds, so it can get to 
 
 ## Installation
 
-Either `export TITAN_LIBRARY_VERSION=0.6` or pass `TITAN_LIBRARY_VERSION=0.6` to the make command when building across the supported platforms:
+Build for the supported platforms with the usual targets:
 
 ```bash
-$ TITAN_LIBRARY_VERSION=0.6 make linux-readline
+$ make linux-readline
 ```
 
 ```bash
-$ TITAN_LIBRARY_VERSION=0.6 make linux
+$ make linux
 ```
 
 ```bash
-$ TITAN_LIBRARY_VERSION=0.6 make macosx
+$ make macosx
 ```
 
 ```cmd
-> set TITAN_LIBRARY_VERSION=0.6 && make mingw
+> make mingw
 ```
 
-Then pass a `PREFIX` and the `TITAN_LIBRARY_VERSION` (if not exported) to `make install` to install the Lua files to that prefix:
+Then pass a `PREFIX` to `make install` to install the Lua files to that prefix:
 
 For Linux/MacOS:
 
 ```bash
-$ PREFIX=$HOME/.local TITAN_LIBRARY_VERSION=0.6 make install
+$ PREFIX=$HOME/.local make install
 ```
 
 For Windows:
 
 ```cmd
-> set PREFIX=%USERPROFILE%\.local && set TITAN_LIBRARY_VERSION=0.6 && make install
+> set PREFIX=%USERPROFILE%\.local && make install
 ```
 
-Even in Linux/MacOS you can compile once and install in different paths, as Lua will derive its search paths from where it is running, similar to what the stock Lua build does in Windows.
+Even in Linux/MacOS you can compile once and install in different paths, as Lua will derive its search paths from where it is running, similar to what the stock Lua build does in Windows. There, as on Windows, `!` in a search path means the directory of the running executable, and the defaults are rooted at `!/../` (for example `!/../lib/lua/5.5/?.so`).
