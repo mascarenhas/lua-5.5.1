@@ -32,9 +32,6 @@ MINGW_STRIP= yes
 # Optional GNU import library emitted by the mingw DLL link.
 LUA_IMPLIB=
 
-# Only VM and library objects own the controlled Windows DLL exports.
-TITAN_DLL_CFLAGS=
-
 # Special flags for compiler modules; -Os reduces code size.
 CMCFLAGS= 
 
@@ -65,8 +62,6 @@ ALL_A= $(LUA_A) $(LUA_IMPLIB)
 
 # Targets start here.
 default: $(PLAT)
-
-$(BASE_O): override CFLAGS += $(TITAN_DLL_CFLAGS)
 
 all:	$(ALL_T)
 
@@ -140,9 +135,9 @@ Darwin macos macosx:
 
 mingw:
 	$(MAKE) "LUA_A=lua55.dll" "LUA_T=lua.exe" "LUAC_T=luac.exe" \
-	"AR=$(CC) -shared $(MYDLLFLAGS) $(LUA_IMPLIBFLAGS) -o" \
+	"AR=$(CC) -shared $(MYDLLFLAGS) -Wl,--export-all-symbols $(LUA_IMPLIBFLAGS) -o" \
 	"RANLIB=$(if $(MINGW_STRIP),strip --strip-unneeded,:)" \
-	"SYSCFLAGS=-DLUA_BUILD_AS_DLL" "TITAN_DLL_CFLAGS=-DTITAN_LUA_BUILD_DLL" \
+	"SYSCFLAGS=-DLUA_BUILD_AS_DLL" \
 	"SYSLIBS=" "SYSLDFLAGS=$(if $(MINGW_STRIP),-s)" $(ALL)
 
 # Targets that do not create files (not all makes understand .PHONY).
