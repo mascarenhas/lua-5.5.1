@@ -7,7 +7,7 @@
 PLAT= guess
 
 CC= gcc -std=gnu99
-CFLAGS= -O2 -Wall -Wextra -DTITAN_VDIR=\"$(TITAN_LIBRARY_VERSION)\" $(SYSCFLAGS) $(MYCFLAGS)
+CFLAGS= -O2 -Wall -Wextra $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= $(SYSLDFLAGS) $(MYLDFLAGS)
 LIBS= -lm $(SYSLIBS) $(MYLIBS)
 
@@ -123,22 +123,19 @@ guess:
 	@echo Guessing `$(UNAME)`
 	@$(MAKE) `$(UNAME)`
 
-check-titan:
-	$(if $(TITAN_LIBRARY_VERSION),,$(error Error: TITAN_LIBRARY_VERSION environment variable is required))
-
-bsd: check-titan
+bsd:
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_POSIX -DLUA_USE_DLOPEN" SYSLIBS="-Wl,-E"
 
-FreeBSD NetBSD OpenBSD freebsd: check-titan
+FreeBSD NetBSD OpenBSD freebsd:
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_LINUX -DLUA_USE_READLINE -I/usr/include/edit" SYSLIBS="-Wl,-E -ledit" CC="cc"
 
-Linux linux: check-titan
+Linux linux:
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_LINUX" SYSLIBS="-Wl,-E -ldl"
 
-linux-readline: check-titan
+linux-readline:
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_LINUX -DLUA_USE_READLINE" SYSLIBS="-Wl,-E -ldl -lreadline"
 
-Darwin macos macosx: check-titan
+Darwin macos macosx:
 	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_MACOSX" SYSLIBS="-lreadline"
 
 mingw:
@@ -149,7 +146,7 @@ mingw:
 	"SYSLIBS=" "SYSLDFLAGS=$(if $(MINGW_STRIP),-s)" $(ALL)
 
 # Targets that do not create files (not all makes understand .PHONY).
-.PHONY: all $(PLATS) help test clean default o a depend echo check-titan
+.PHONY: all $(PLATS) help test clean default o a depend echo
 
 # Compiler modules may use special flags.
 llex.o:

@@ -196,8 +196,7 @@
 ** LUA_PATH_SEP is the character that separates templates in a path.
 ** LUA_PATH_MARK is the string that marks the substitution points in a
 ** template.
-** LUA_EXEC_DIR in a Windows path is replaced by the executable's
-** directory.
+** LUA_EXEC_DIR in a path is replaced by the executable's directory.
 */
 #define LUA_PATH_SEP            ";"
 #define LUA_PATH_MARK           "?"
@@ -242,10 +241,9 @@
 
 #else			/* }{ */
 
-#define LUA_ROOT "!/"
+#define LUA_ROOT	"!/../"
 #define LUA_LDIR	LUA_ROOT "share/lua/" LUA_VDIR "/"
 #define LUA_CDIR	LUA_ROOT "lib/lua/" LUA_VDIR "/"
-#define LUA_TITAN_CDIR	LUA_ROOT "lib/titan/0.6/"
 
 #if !defined(LUA_PATH_DEFAULT)
 #define LUA_PATH_DEFAULT  \
@@ -256,7 +254,7 @@
 
 #if !defined(LUA_CPATH_DEFAULT)
 #define LUA_CPATH_DEFAULT \
-		LUA_CDIR "?.so;" LUA_CDIR "loadall.so;" LUA_ROOT "lib/titan/" TITAN_VDIR "/?.so;" "./?.so"
+		LUA_CDIR "?.so;" LUA_CDIR "loadall.so;" "./?.so"
 #endif
 
 #endif			/* } */
