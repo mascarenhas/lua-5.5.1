@@ -6,6 +6,8 @@ Additionaly, for Windows mingw builds (the only ones currently tested with Titan
 
 In Linux and MacOS Titan by default expects static Lua builds, so it can get to these functions by just linking with the regular Lua archive file.
 
+The Unix targets (`linux`, `linux-readline`, `macosx`, `bsd`, and `freebsd`) compile with `-fPIC` by default, so `liblua.a` is position-independent and Titan can link it into shared objects: its `titan.so` support module and every compiled Titan module. Stock Lua leaves that flag to the caller. Here it is part of the targets' `SYSCFLAGS`, so setting `MYCFLAGS` for other options does not drop it. The `mingw` target is unchanged.
+
 ## Installation
 
 Build for the supported platforms with the usual targets:
