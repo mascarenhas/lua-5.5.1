@@ -191,6 +191,38 @@ and liblua.a (the library).
   The files in <TT>include</TT> and <TT>lib</TT> are needed for
   embedding Lua in C or C++ programs.
 
+<H3><A NAME="browser">Browser (Wasm) builds</A></H3>
+<P>
+  <KBD>make browser</KBD> builds a WebAssembly library instead of the native
+  interpreter and compiler.
+  It requires Emscripten 6.0.13 (<KBD>emcc</KBD>, <KBD>emar</KBD>,
+  <KBD>emranlib</KBD>), refuses any other version, and needs a Linux or macOS
+  host.
+  The objects live in <TT>src/browser/obj</TT>, so building for the browser
+  and for the native platform in the same tree never reuses the other's
+  objects; <KBD>make clean</KBD> removes both.
+  The archive is built with <KBD>-DLUA_USE_POSIX -DLUA_USE_BROWSER</KBD>
+  (no dynamic loader and no readline) and
+  <KBD>-sSUPPORT_LONGJMP=emscripten</KBD>, and without <KBD>-fPIC</KBD>.
+
+<P>
+  <KBD>make install-browser PREFIX=xxx</KBD> writes
+  <TT>lib/browser/liblua.a</TT>, every header the archive compiled against in
+  <TT>lib/browser/include</TT>, and the build record
+  <TT>lib/browser/liblua-config.txt</TT>;
+  it never touches the native installation and never runs a host Lua
+  interpreter.
+  A tarball build has no git metadata and must pass its commit with
+  <KBD>FORK_REVISION=xxx</KBD>.
+
+<P>
+  <KBD>make browser-test</KBD> links <TT>src/browser/lua.js</TT> and runs it
+  under Node as a smoke test. It is a toolchain check, not a delivery.
+
+<P>
+  The <TT>README.md</TT> in the distribution describes the record, including
+  the exact byte format of its digests.
+
 <H3><A NAME="customization">Customization</A></H3>
 <P>
   Three kinds of things can be customized by editing a file:

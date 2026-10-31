@@ -122,6 +122,28 @@ endif
 # make may get confused with install/ if it does not support .PHONY.
 dummy:
 
+# Browser (WebAssembly).  'make browser' builds only the static library; the
+# interpreter image is a Node smoke test.  'make install-browser PREFIX=...'
+# writes PREFIX/lib/browser/{liblua.a,include/*.h,liblua-config.txt} and never
+# touches the native installation above.  See doc/readme.html, "Browser (Wasm)
+# builds", and README.md for the record.
+INSTALL_BROWSER= $(INSTALL_TOP)/lib/browser
+
+browser:
+	@cd src && $(MAKE) browser
+
+browser-test:
+	@cd src && $(MAKE) browser-test
+
+install-browser: check-prefix browser
+ifeq ($(INSTALL_NATIVE_WINDOWS),yes)
+	@echo "Error: 'make install-browser' needs a POSIX shell; browser builds are supported on Linux and macOS hosts." >&2; exit 1
+else
+	@cd src && $(MAKE) -s --no-print-directory browser-config | \
+		FORK_REVISION="$(FORK_REVISION)" \
+		sh ../tools/install-browser.sh "$(INSTALL_BROWSER)"
+endif
+
 # Echo config parameters.
 echo:
 	@cd src && $(MAKE) -s echo
@@ -150,6 +172,7 @@ pc:
 	@echo "includedir=$(INSTALL_INC)"
 
 # Targets that do not create files (not all makes understand .PHONY).
-.PHONY: all $(PLATS) help test clean install uninstall local dummy echo pc check-prefix
+.PHONY: all $(PLATS) help test clean install uninstall local dummy echo pc \
+	check-prefix browser browser-test install-browser
 
 # (end of Makefile)
