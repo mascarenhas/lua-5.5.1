@@ -65,6 +65,51 @@ ALL_O= $(BASE_O) $(LUA_O) $(LUAC_O) $(MYLUAOBJS)
 ALL_T= $(LUA_A) $(LUA_IMPLIB) $(LUA_T) $(LUAC_T)
 ALL_A= $(LUA_A) $(LUA_IMPLIB)
 
+# == Browser (WebAssembly) build =============================================
+# The only supported toolchain, and the version the build record names.
+BROWSER_EMSCRIPTEN= 6.0.13
+BROWSER_CC= emcc
+BROWSER_AR= emar rcu
+BROWSER_RANLIB= emranlib
+BROWSER_TARGET= wasm32-unknown-emscripten
+# Longjmp implementation the archive is compiled with.  Titan's 'titan.h'
+# mirrors 'lua_longjmp', so the record carries this mode.
+BROWSER_LONGJMP= emscripten
+# No -fPIC: wasm32 objects are position-independent already and the backend
+# rejects the flag, so UNIX_SYSCFLAGS is deliberately absent.  LUA_USE_POSIX
+# without LUA_USE_DLOPEN: a Wasm image has no dynamic loader, and
+# LUA_USE_BROWSER drops the executable-relative '!/../' package-path root.
+# MYCFLAGS is appended, exactly as the native CFLAGS does.
+BROWSER_SYSCFLAGS= -DLUA_USE_POSIX -DLUA_USE_BROWSER \
+	-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP)
+# Browser objects live in their own directory, so a native build and a browser
+# build of the same tree never reuse or clobber each other's objects.
+BROWSER_DIR= browser
+BROWSER_OBJDIR= $(BROWSER_DIR)/obj
+BROWSER_A= $(BROWSER_DIR)/liblua.a
+BROWSER_JS= $(BROWSER_DIR)/lua.js
+BROWSER_O= $(addprefix $(BROWSER_OBJDIR)/,$(BASE_O))
+BROWSER_JSO= $(BROWSER_OBJDIR)/lua.o
+# The objects and the archive record the toolchain configuration that produced
+# them, so changing CC, CFLAGS or the Emscripten build rebuilds them instead of
+# leaving a library that disagrees with its build record.
+BROWSER_STAMP= $(BROWSER_OBJDIR)/.build-config
+# Compiler modules keep their special flags in the browser build too.
+BROWSER_CM_O= $(BROWSER_OBJDIR)/llex.o $(BROWSER_OBJDIR)/lparser.o \
+	$(BROWSER_OBJDIR)/lcode.o
+# Every header the archived objects compile against: the public ones and the
+# internal ones.  lua.hpp is a C++ convenience header that the build never
+# includes.
+BROWSER_INC= $(sort $(filter-out lua.hpp,$(wildcard *.h)))
+# Command-line overrides for the recursive browser invocations.  MYCFLAGS is
+# passed explicitly because this file defines it, which would otherwise hide
+# an environment value.
+BROWSER_FLAGS= \
+	"CC=$(BROWSER_CC)" "AR=$(BROWSER_AR)" "RANLIB=$(BROWSER_RANLIB)" \
+	"SYSCFLAGS=$(BROWSER_SYSCFLAGS)" "MYCFLAGS=$(MYCFLAGS)" \
+	"MYLDFLAGS=$(MYLDFLAGS)"
+NODE= node
+
 # Targets start here.
 default: $(PLAT)
 
@@ -91,11 +136,47 @@ $(LUA_T): $(LUA_O) $(MYLUAOBJS) $(LUA_A) $(LUA_LINK)
 $(LUAC_T): $(LUAC_O) $(LUA_A) $(LUA_LINK)
 	$(CC) -o $@ $(LDFLAGS) $(LUAC_O) $(LUA_LINK) $(LIBS)
 
+# Browser (WebAssembly) build rules.  Static pattern rules, so the objects
+# never mix with the native ones in this directory, and the object directory
+# is created before the first compile.
+$(BROWSER_OBJDIR):
+	@mkdir -p $@
+
+# Always re-evaluated, but rewritten only when the configuration changed, so
+# an unchanged configuration keeps everything up to date.
+$(BROWSER_STAMP): browser-config-changed | $(BROWSER_OBJDIR)
+	@{ \
+		echo "CC=$(CC)"; \
+		echo "AR=$(AR)"; \
+		echo "RANLIB=$(RANLIB)"; \
+		echo "CFLAGS=$(CFLAGS)"; \
+		$(CC) --version 2>/dev/null | head -n 1; \
+	} > $@.tmp
+	@if cmp -s $@.tmp $@; then $(RM) $@.tmp; else mv $@.tmp $@; fi
+
+$(BROWSER_CM_O): $(BROWSER_OBJDIR)/%.o: %.c $(BROWSER_STAMP) | $(BROWSER_OBJDIR)
+	$(CC) $(CFLAGS) $(CMCFLAGS) -c $< -o $@
+
+$(filter-out $(BROWSER_CM_O),$(BROWSER_O) $(BROWSER_JSO)): \
+		$(BROWSER_OBJDIR)/%.o: %.c $(BROWSER_STAMP) | $(BROWSER_OBJDIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BROWSER_A): $(BROWSER_O) $(BROWSER_STAMP)
+	$(AR) $@ $(BROWSER_O)
+	$(RANLIB) $@
+
+# A Node image of the interpreter.  It is a toolchain smoke test, not a
+# delivery: Titan links the archive, and the runner belongs to the caller.
+$(BROWSER_JS): $(BROWSER_JSO) $(BROWSER_A) $(BROWSER_STAMP)
+	$(CC) -o $@ $(LDFLAGS) $(BROWSER_JSO) $(BROWSER_A) $(LIBS) \
+		-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP)
+
 test:
 	./$(LUA_T) -v
 
 clean:
 	$(RM) $(ALL_T) $(ALL_O)
+	$(RM) -r $(BROWSER_DIR)
 
 depend:
 	@$(CC) $(CFLAGS) -MM l*.c
@@ -117,6 +198,7 @@ ALL= all
 help:
 	@echo "Do 'make PLATFORM' where PLATFORM is one of these:"
 	@echo "   $(PLATS)"
+	@echo "Do 'make browser' for the WebAssembly archive (Emscripten $(BROWSER_EMSCRIPTEN))."
 	@echo "See doc/readme.html for complete instructions."
 
 guess:
@@ -145,8 +227,55 @@ mingw:
 	"SYSCFLAGS=-DLUA_BUILD_AS_DLL" \
 	"SYSLIBS=" "SYSLDFLAGS=$(if $(MINGW_STRIP),-s)" $(ALL)
 
+# Browser (WebAssembly).  'make browser' builds only the static library; the
+# interpreter image is a smoke test.  'make browser-config' prints the values
+# the install step records, and 'make browser-echo' prints them for the
+# recursive invocation's effective CFLAGS.
+#
+# Always up to date; it exists so the configuration stamp recipe runs on every
+# browser build, and rewrites the stamp only when the configuration changed.
+browser-config-changed:
+
+browser: browser-version-check
+	@$(MAKE) $(BROWSER_A) $(BROWSER_FLAGS)
+
+browser-version-check:
+	@version=`$(BROWSER_CC) --version 2>/dev/null | head -n 1 | \
+		sed -n 's/.*) \([0-9][0-9.]*\).*/\1/p'`; \
+	if [ "$$version" != "$(BROWSER_EMSCRIPTEN)" ]; then \
+		echo "Error: 'make browser' requires Emscripten $(BROWSER_EMSCRIPTEN);" \
+			"'$(BROWSER_CC)' reports '$${version:-missing}'." >&2; \
+		echo "Install it with 'emsdk install $(BROWSER_EMSCRIPTEN) &&" \
+			"emsdk activate $(BROWSER_EMSCRIPTEN)' and source emsdk_env.sh." >&2; \
+		exit 1; \
+	fi
+
+browser-js: browser-version-check
+	@$(MAKE) $(BROWSER_JS) $(BROWSER_FLAGS)
+
+browser-test: browser-js
+	@$(NODE) $(BROWSER_JS) -v
+	@$(NODE) $(BROWSER_JS) -e \
+		'assert(1 + 1 == 2); assert(("ok"):upper() == "OK"); assert(package.path:match("^share/lua/"), "browser package.path: " .. package.path); print("browser smoke ok")'
+
+browser-config:
+	@$(MAKE) --no-print-directory browser-echo $(BROWSER_FLAGS)
+
+browser-echo:
+	@echo "browser_archive= $(BROWSER_A)"
+	@echo "browser_src= ."
+	@echo "browser_root= .."
+	@echo "browser_headers= $(BROWSER_INC)"
+	@echo "browser_cc= $(BROWSER_CC)"
+	@echo "browser_target= $(BROWSER_TARGET)"
+	@echo "browser_emscripten_version= $(BROWSER_EMSCRIPTEN)"
+	@echo "browser_sjlj= $(BROWSER_LONGJMP)"
+	@echo "browser_cflags= $(CFLAGS)"
+
 # Targets that do not create files (not all makes understand .PHONY).
-.PHONY: all $(PLATS) help test clean default o a depend echo
+.PHONY: all $(PLATS) help test clean default o a depend echo \
+	browser browser-version-check browser-js browser-test browser-config \
+	browser-echo browser-config-changed
 
 # Compiler modules may use special flags.
 llex.o:
