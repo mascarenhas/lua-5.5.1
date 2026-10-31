@@ -75,11 +75,13 @@ BROWSER_TARGET= wasm32-unknown-emscripten
 # Longjmp implementation the archive is compiled with.  Titan's 'titan.h'
 # mirrors 'lua_longjmp', so the record carries this mode.
 BROWSER_LONGJMP= emscripten
-# No -fPIC: wasm32 objects are position-independent already and the backend
-# rejects the flag, so UNIX_SYSCFLAGS is deliberately absent.  LUA_USE_POSIX
-# without LUA_USE_DLOPEN: a Wasm image has no dynamic loader, and
-# LUA_USE_BROWSER drops the executable-relative '!/../' package-path root.
-# MYCFLAGS is appended, exactly as the native CFLAGS does.
+# No -fPIC: the archive is a static, non-PIC artifact.  PIC Wasm objects take
+# their addresses from GOT.mem/GOT.func imports (what a side module looks
+# like), and every consumer of this archive reads relocatable static objects,
+# so a PIC member would be an incompatible artifact.  LUA_USE_POSIX without
+# LUA_USE_DLOPEN: a Wasm image has no dynamic loader, and LUA_USE_BROWSER
+# drops the executable-relative '!/../' package-path root.  MYCFLAGS is
+# appended, exactly as the native CFLAGS does.
 BROWSER_SYSCFLAGS= -DLUA_USE_POSIX -DLUA_USE_BROWSER \
 	-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP)
 # Browser objects live in their own directory, so a native build and a browser
@@ -90,16 +92,20 @@ BROWSER_A= $(BROWSER_DIR)/liblua.a
 BROWSER_JS= $(BROWSER_DIR)/lua.js
 BROWSER_O= $(addprefix $(BROWSER_OBJDIR)/,$(BASE_O))
 BROWSER_JSO= $(BROWSER_OBJDIR)/lua.o
-# The objects and the archive record the toolchain configuration that produced
-# them, so changing CC, CFLAGS or the Emscripten build rebuilds them instead of
-# leaving a library that disagrees with its build record.
+# One homogeneous flag set for every browser object.  The build record states
+# a single 'cflags' value for the archive, so per-object extras would make it
+# false for the other objects; CMCFLAGS therefore applies to the whole archive
+# here instead of only to the compiler modules as the native build does.
+BROWSER_CFLAGS= $(CFLAGS) $(CMCFLAGS)
+# The objects and the archive record the configuration and the member list
+# that produced them, so changing a flag, the toolchain or the object set
+# rebuilds them instead of leaving a library that disagrees with its record.
 BROWSER_STAMP= $(BROWSER_OBJDIR)/.build-config
-# Compiler modules keep their special flags in the browser build too.
-BROWSER_CM_O= $(BROWSER_OBJDIR)/llex.o $(BROWSER_OBJDIR)/lparser.o \
-	$(BROWSER_OBJDIR)/lcode.o
 # Every header the archived objects compile against: the public ones and the
-# internal ones.  lua.hpp is a C++ convenience header that the build never
-# includes.
+# internal ones, which are their real prerequisites.  lua.hpp is a C++
+# convenience header that the build never includes.  Depending on the whole
+# set is deliberate: the per-object dependency list would have to be kept in
+# step by hand, and a stale object must never survive a header change.
 BROWSER_INC= $(sort $(filter-out lua.hpp,$(wildcard *.h)))
 # Command-line overrides for the recursive browser invocations.  MYCFLAGS is
 # passed explicitly because this file defines it, which would otherwise hide
@@ -142,26 +148,27 @@ $(LUAC_T): $(LUAC_O) $(LUA_A) $(LUA_LINK)
 $(BROWSER_OBJDIR):
 	@mkdir -p $@
 
-# Always re-evaluated, but rewritten only when the configuration changed, so
-# an unchanged configuration keeps everything up to date.
+# Always re-evaluated, but rewritten only when the configuration or the member
+# list changed, so an unchanged build keeps everything up to date.
 $(BROWSER_STAMP): browser-config-changed | $(BROWSER_OBJDIR)
 	@{ \
 		echo "CC=$(CC)"; \
 		echo "AR=$(AR)"; \
 		echo "RANLIB=$(RANLIB)"; \
-		echo "CFLAGS=$(CFLAGS)"; \
+		echo "CFLAGS=$(BROWSER_CFLAGS)"; \
+		echo "OBJECTS=$(BROWSER_O)"; \
 		$(CC) --version 2>/dev/null | head -n 1; \
 	} > $@.tmp
 	@if cmp -s $@.tmp $@; then $(RM) $@.tmp; else mv $@.tmp $@; fi
 
-$(BROWSER_CM_O): $(BROWSER_OBJDIR)/%.o: %.c $(BROWSER_STAMP) | $(BROWSER_OBJDIR)
-	$(CC) $(CFLAGS) $(CMCFLAGS) -c $< -o $@
+$(BROWSER_O) $(BROWSER_JSO): $(BROWSER_OBJDIR)/%.o: %.c $(BROWSER_INC) \
+		$(BROWSER_STAMP) | $(BROWSER_OBJDIR)
+	$(CC) $(BROWSER_CFLAGS) -c $< -o $@
 
-$(filter-out $(BROWSER_CM_O),$(BROWSER_O) $(BROWSER_JSO)): \
-		$(BROWSER_OBJDIR)/%.o: %.c $(BROWSER_STAMP) | $(BROWSER_OBJDIR)
-	$(CC) $(CFLAGS) -c $< -o $@
-
+# Recreated from scratch, so a member that left the object list cannot
+# survive in an existing archive.
 $(BROWSER_A): $(BROWSER_O) $(BROWSER_STAMP)
+	$(RM) $@
 	$(AR) $@ $(BROWSER_O)
 	$(RANLIB) $@
 
@@ -270,7 +277,7 @@ browser-echo:
 	@echo "browser_target= $(BROWSER_TARGET)"
 	@echo "browser_emscripten_version= $(BROWSER_EMSCRIPTEN)"
 	@echo "browser_sjlj= $(BROWSER_LONGJMP)"
-	@echo "browser_cflags= $(CFLAGS)"
+	@echo "browser_cflags= $(BROWSER_CFLAGS)"
 
 # Targets that do not create files (not all makes understand .PHONY).
 .PHONY: all $(PLATS) help test clean default o a depend echo \

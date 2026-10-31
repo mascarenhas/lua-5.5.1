@@ -74,36 +74,45 @@ target=
 emscripten_version=
 sjlj=
 cflags=
+# Duplicate detection tracks the keys themselves, not their values: an empty
+# first value must not let a second occurrence through as if it were new.
+seen_keys=
+take() {
+	case " $seen_keys " in
+	*" $1 "*) fail "duplicate '$1' in the build configuration" ;;
+	esac
+	seen_keys="$seen_keys $1"
+}
 while IFS= read -r line || [ -n "$line" ]; do
 	case $line in
 	'' | ' '*)
 		fail "malformed line in the build configuration: '$line'" ;;
 	browser_archive=*)
-		[ -z "$archive" ] || fail "duplicate 'browser_archive'"
+		take browser_archive
 		archive=$(trim "${line#browser_archive=}") ;;
 	browser_src=*)
-		[ -z "$src" ] || fail "duplicate 'browser_src'"
+		take browser_src
 		src=$(trim "${line#browser_src=}") ;;
 	browser_root=*)
-		[ -z "$root" ] || fail "duplicate 'browser_root'"
+		take browser_root
 		root=$(trim "${line#browser_root=}") ;;
 	browser_headers=*)
-		[ -z "$headers" ] || fail "duplicate 'browser_headers'"
+		take browser_headers
 		headers=$(trim "${line#browser_headers=}") ;;
 	browser_cc=*)
-		[ -z "$cc" ] || fail "duplicate 'browser_cc'"
+		take browser_cc
 		cc=$(trim "${line#browser_cc=}") ;;
 	browser_target=*)
-		[ -z "$target" ] || fail "duplicate 'browser_target'"
+		take browser_target
 		target=$(trim "${line#browser_target=}") ;;
 	browser_emscripten_version=*)
-		[ -z "$emscripten_version" ] || fail "duplicate 'browser_emscripten_version'"
+		take browser_emscripten_version
 		emscripten_version=$(trim "${line#browser_emscripten_version=}") ;;
 	browser_sjlj=*)
-		[ -z "$sjlj" ] || fail "duplicate 'browser_sjlj'"
+		take browser_sjlj
 		sjlj=$(trim "${line#browser_sjlj=}") ;;
 	browser_cflags=*)
-		[ -z "$cflags" ] || fail "duplicate 'browser_cflags'"
+		take browser_cflags
 		cflags=$(trim "${line#browser_cflags=}") ;;
 	*)
 		fail "unknown key in the build configuration: '${line%%=*}'" ;;
@@ -124,6 +133,7 @@ done <"$tmp/config"
 [ -d "$src" ] || fail "no source directory: $src"
 src_abs=$(cd "$src" && pwd)
 root_abs=$(cd "$src_abs/$root" 2>/dev/null && pwd) || root_abs=
+[ -n "$root_abs" ] || fail "no fork root directory: $src_abs/$root"
 
 # ---- toolchain --------------------------------------------------------------
 
@@ -139,11 +149,14 @@ found=$(printf '%s\n' "$banner" |
 	"'$cc' reports Emscripten $found, but the browser target requires $emscripten_version; install it with 'emsdk install $emscripten_version && emsdk activate $emscripten_version' and source emsdk_env.sh"
 
 if command -v sha256sum >/dev/null 2>&1; then
-	sha256_file() { sha256sum "$1" | cut -c1-64; }
+	# Reading from stdin keeps the pathname out of the output, so a path
+	# containing a backslash cannot turn the recorded digest into garbage:
+	# sha256sum escapes such a pathname and prefixes the whole line with '\'.
+	sha256_file() { sha256sum < "$1" | cut -c1-64; }
 elif command -v shasum >/dev/null 2>&1; then
-	sha256_file() { shasum -a 256 "$1" | cut -c1-64; }
+	sha256_file() { shasum -a 256 < "$1" | cut -c1-64; }
 elif command -v openssl >/dev/null 2>&1; then
-	sha256_file() { openssl dgst -sha256 "$1" | sed 's/.*= *//' | cut -c1-64; }
+	sha256_file() { openssl dgst -sha256 < "$1" | sed 's/.*= *//' | cut -c1-64; }
 else
 	fail 'no SHA-256 tool found (tried sha256sum, shasum -a 256 and openssl dgst -sha256)'
 fi
@@ -160,9 +173,15 @@ archive_path=$src_abs/$archive
 
 revision=${FORK_REVISION:-}
 if [ -z "$revision" ]; then
-	revision=$(cd "$root_abs" 2>/dev/null && git rev-parse HEAD 2>/dev/null || true)
+	# git searches enclosing directories, so a source tree unpacked inside an
+	# unrelated checkout would report that repository's commit.  Only a root
+	# with its own metadata is this fork's checkout.
+	if [ ! -e "$root_abs/.git" ]; then
+		fail "cannot determine the fork revision: $root_abs has no .git, and a tarball build has no revision of its own; pass FORK_REVISION=<40-hex commit>"
+	fi
+	revision=$(git -C "$root_abs" rev-parse HEAD 2>/dev/null || true)
 	[ -n "$revision" ] || fail \
-		"cannot determine the fork revision: ${root_abs:-${src_abs}/..} is not a git checkout, and a tarball build has no revision of its own; pass FORK_REVISION=<40-hex commit>"
+		"cannot determine the fork revision: 'git rev-parse HEAD' failed in $root_abs; pass FORK_REVISION=<40-hex commit>"
 fi
 case $revision in
 *[!0-9a-f]*)
@@ -173,44 +192,67 @@ esac
 
 # ---- the compile flags, defines and numeric configuration -------------------
 
+# The effective values, as the compiler and emcc actually resolve these flags:
+# for both, a later occurrence replaces an earlier one.  emcc accepts
+# '-sNAME=VALUE' and '-s NAME=VALUE', and both change code generation, so both
+# spellings are read here.
 cflags_normalized=
 defines=
+longjmp=
+pic_flags=
+previous=
 for flag in $cflags; do
 	cflags_normalized=${cflags_normalized:+$cflags_normalized }$flag
 	case $flag in
 	-D*) defines=${defines:+$defines }$flag ;;
+	-sSUPPORT_LONGJMP=*) longjmp=${flag#-sSUPPORT_LONGJMP=} ;;
+	SUPPORT_LONGJMP=*)
+		if [ "$previous" = "-s" ]; then
+			longjmp=${flag#SUPPORT_LONGJMP=}
+		fi ;;
+	-fPIC | -fpic | -fPIE | -fpie) pic_flags="$pic_flags $flag" ;;
 	esac
+	previous=$flag
 done
 if [ -n "$defines" ]; then
 	lua_defines=$(printf '%s\n' $defines | LC_ALL=C sort -u | paste -sd ' ' -)
 else
 	lua_defines=
 fi
-# A browser build without these is not the configuration this record
-# describes, so refuse to write a record that would mislead the reader.
-case " $lua_defines " in
-*' -DLUA_USE_POSIX '*) ;;
-*)
-	fail "the browser build must define LUA_USE_POSIX; the compile flags are: $cflags_normalized" ;;
-esac
-case " $lua_defines " in
-*' -DLUA_USE_BROWSER '*) ;;
-*)
-	fail "the browser build must define LUA_USE_BROWSER; the compile flags are: $cflags_normalized" ;;
-esac
-case " $lua_defines " in
-*' -DLUA_USE_DLOPEN '*)
-	fail "the browser build must not define LUA_USE_DLOPEN: a Wasm image has no dynamic loader" ;;
-esac
-# The record states the longjmp mode, so the flags that produced the archive
-# must actually carry it.  A caller-owned CFLAGS that drops it would otherwise
-# produce a record that misdescribes the library.
-case " $cflags_normalized " in
-*" -sSUPPORT_LONGJMP=$sjlj "*)
-	;;
-*)
-	fail "the browser build must compile with -sSUPPORT_LONGJMP=$sjlj; the compile flags are: $cflags_normalized" ;;
-esac
+# The record states one longjmp mode for the archive, so the effective one --
+# the last -s flag emcc sees -- must be that mode.  A caller-owned MYCFLAGS that
+# appends another mode would otherwise be certified as this one.
+[ -n "$longjmp" ] || fail \
+	"the browser build must compile with -sSUPPORT_LONGJMP=$sjlj; the compile flags are: $cflags_normalized"
+[ "$longjmp" = "$sjlj" ] || fail \
+	"the browser build resolves -sSUPPORT_LONGJMP=$longjmp, but the build record would state sjlj=$sjlj; the compile flags are: $cflags_normalized"
+[ -z "$pic_flags" ] || fail \
+	"the browser build must not compile position-independent objects ($pic_flags): a PIC Wasm object imports GOT.mem/GOT.func, which a static object reader rejects; the compile flags are: $cflags_normalized"
+
+# The effective Lua platform configuration, as the preprocessor resolves it
+# after every caller flag.  Searching the -D tokens alone is not enough: a
+# later -U, an assignment such as -DLUA_USE_DLOPEN=1, or an indirect
+# enablement such as -DLUA_USE_LINUX leaves those tokens in place.
+cat >"$tmp/macros.c" <<'EOF'
+#include "luaconf.h"
+EOF
+macros=$("$cc" -dM -E -I"$src_abs" $cflags "$tmp/macros.c" 2>"$tmp/macros.log") ||
+	{
+		cat "$tmp/macros.log" >&2
+		fail "cannot preprocess luaconf.h with '$cc'"
+	}
+has_define() {
+	printf '%s\n' "$macros" |
+		awk -v name="$1" \
+			'$1 == "#define" && $2 == name { found = 1 } END { exit !found }'
+}
+has_define LUA_USE_POSIX || fail \
+	"the effective Lua configuration must define LUA_USE_POSIX; the compile flags are: $cflags_normalized"
+has_define LUA_USE_BROWSER || fail \
+	"the effective Lua configuration must define LUA_USE_BROWSER, which selects browser package paths; a later -U or an indirect -DLUA_USE_LINUX/-DLUA_USE_MACOSX changes it. The compile flags are: $cflags_normalized"
+if has_define LUA_USE_DLOPEN; then
+	fail "the effective Lua configuration must not define LUA_USE_DLOPEN: a Wasm image has no dynamic loader; the compile flags are: $cflags_normalized"
+fi
 
 cat >"$tmp/numeric.c" <<'EOF'
 #include "luaconf.h"

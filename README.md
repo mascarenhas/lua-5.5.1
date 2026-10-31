@@ -59,17 +59,23 @@ The archive is compiled with
 | compiler | `emcc` (Emscripten 6.0.13, the only accepted version) |
 | archiver | `emar rcu`, ranlib `emranlib` |
 | objects | `src/browser/obj/*.o`, separate from the native build |
-| `-fPIC` | absent: wasm32 objects are position-independent already, and the backend rejects the flag |
+| `-fPIC` | absent: the archive is a static, non-PIC artifact. Emscripten accepts `-fPIC`, but a PIC Wasm object carries `GOT.mem`/`GOT.func` imports — the shape of a side module — which the consumers of a static Lua archive reject |
 | defines | `-DLUA_USE_POSIX -DLUA_USE_BROWSER` |
 | dynamic loading | none: no `LUA_USE_DLOPEN`, no readline |
 | longjmp | `-sSUPPORT_LONGJMP=emscripten`, in `SYSCFLAGS` and therefore on every compile line |
 | package paths | `LUA_USE_BROWSER` drops the executable-relative `!/../` root, leaving `share/lua/5.5/…`, `lib/lua/5.5/…` and `./…` |
 
-`MYCFLAGS` is passed through to the archive build, after the settings above. The
-browser objects record the toolchain configuration that produced them
-(`src/browser/obj/.build-config`), so changing `CC`, `CFLAGS`, `MYCFLAGS` or the
-Emscripten build rebuilds them instead of leaving an archive that disagrees with
-the record written at install time.
+`MYCFLAGS` is appended to `CFLAGS`, exactly as in the native build. `CMCFLAGS`
+applies to every browser object here, not only to the compiler modules as the
+native build does: the record states one `cflags` value for the whole archive,
+so a per-object extra would make that statement false for the other objects.
+
+The browser objects depend on every header they compile against, and they
+record the configuration and the member list that produced them
+(`src/browser/obj/.build-config`). Changing a header, `CC`, `CFLAGS`,
+`CMCFLAGS`, the object list or the Emscripten build therefore rebuilds them,
+and `liblua.a` is recreated from exactly the current member list, so a removed
+object cannot survive as a stale member.
 
 ```bash
 $ source /path/to/emsdk/emsdk_env.sh     # provides emcc 6.0.13 and node
@@ -132,16 +138,16 @@ cflags=<effective compile flags>
 
 | Key | Meaning |
 | --- | --- |
-| `fork_revision` | The commit the library was built from, `git rev-parse HEAD` of this repository. A tarball build has no git metadata, so it must pass `FORK_REVISION=<40-hex commit>`; without it the install fails and says so. |
+| `fork_revision` | The commit the library was built from, `git rev-parse HEAD` of this repository, read only when the source root has its own `.git`: a tree unpacked inside an unrelated checkout must not inherit that repository's commit. A tarball build has no git metadata, so it must pass `FORK_REVISION=<40-hex commit>`; without it the install fails and says so. |
 | `archive_sha256` | SHA-256 of the installed `liblua.a`, lowercase hex. `emar` writes deterministic archives, so the value is stable for a given commit, flags and Emscripten version. |
 | `headers_sha256` | Digest over the installed headers; byte format below. |
 | `emscripten_version` | The pin, checked against the recording `emcc --version` during the install. |
 | `target` | The physical ABI/toolchain triple. |
 | `wasm_features` | The `target_features` entries of an object compiled with these flags: space-separated `+name`/`-name` tokens, ascending byte order of the token. |
-| `sjlj` | The longjmp mode the archive was compiled with, `emscripten`. |
+| `sjlj` | The longjmp mode the archive was compiled with, `emscripten`: the last `-sSUPPORT_LONGJMP=` emcc sees. The install reads that effective value and refuses a build whose last one differs from the mode the record would state. |
 | `lua_defines` | The `-D` flags of `cflags`, sorted with `LC_ALL=C sort -u`, space-separated. |
 | `numeric` | `integer=<C type of LUA_INTEGER>,float=<C type of LUA_NUMBER>`, as the preprocessor expands them from the installed `luaconf.h`. |
-| `cflags` | The effective compile flags, whitespace-normalized to single spaces, in the order the compiler saw them, including any `MYCFLAGS`. |
+| `cflags` | The effective compile flags for every object in the archive, whitespace-normalized to single spaces, in the order the compiler saw them, including any `MYCFLAGS` and `CMCFLAGS`. |
 
 ### Byte format of `headers_sha256`
 
@@ -190,10 +196,16 @@ must match.
 - `emcc` is not on `PATH`, or reports a version other than 6.0.13, or its
   version cannot be read;
 - the archive is missing (`make browser`), or is not an `ar` archive;
-- the tree is not a git checkout and `FORK_REVISION` was not given, or
-  `FORK_REVISION` is not 40 lowercase hex characters;
-- the compile flags do not define `LUA_USE_POSIX` and `LUA_USE_BROWSER`, or do
-  define `LUA_USE_DLOPEN`;
+- the source root has no `.git` (a tarball) and `FORK_REVISION` was not given,
+  or `FORK_REVISION` is not 40 lowercase hex characters;
+- the effective Lua configuration, read from the preprocessor after every
+  caller flag, does not define `LUA_USE_POSIX` and `LUA_USE_BROWSER`, or does
+  define `LUA_USE_DLOPEN` (directly, through an assignment or through an
+  indirect `LUA_USE_LINUX`);
+- the effective `-sSUPPORT_LONGJMP=` differs from the recorded `sjlj`, or is
+  absent;
+- the flags request position-independent objects (`-fPIC`, `-fpic`, `-fPIE`,
+  `-fpie`);
 - `luaconf.h` cannot be preprocessed, or does not define `LUA_INTEGER` or
   `LUA_NUMBER`;
 - the feature probe cannot be compiled, or declares no features;

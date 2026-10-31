@@ -203,7 +203,9 @@ and liblua.a (the library).
   objects; <KBD>make clean</KBD> removes both.
   The archive is built with <KBD>-DLUA_USE_POSIX -DLUA_USE_BROWSER</KBD>
   (no dynamic loader and no readline) and
-  <KBD>-sSUPPORT_LONGJMP=emscripten</KBD>, and without <KBD>-fPIC</KBD>.
+  <KBD>-sSUPPORT_LONGJMP=emscripten</KBD>, and without <KBD>-fPIC</KBD>:
+  it is a static artifact, and a PIC Wasm object imports its addresses from
+  <TT>GOT.mem</TT>/<TT>GOT.func</TT> like a side module.
 
 <P>
   <KBD>make install-browser PREFIX=xxx</KBD> writes
