@@ -20,6 +20,11 @@ SYSCFLAGS=
 SYSLDFLAGS=
 SYSLIBS=
 
+# The Unix platform targets below build position-independent objects so a host
+# can link liblua.a into a shared library. It lives in SYSCFLAGS, ahead of the
+# caller-owned tail of CFLAGS, so an ordinary MYCFLAGS cannot drop it.
+UNIX_SYSCFLAGS= -fPIC
+
 MYCFLAGS=
 MYLDFLAGS=
 MYLIBS=
@@ -119,19 +124,19 @@ guess:
 	@$(MAKE) `$(UNAME)`
 
 bsd:
-	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_POSIX -DLUA_USE_DLOPEN" SYSLIBS="-Wl,-E"
+	$(MAKE) $(ALL) SYSCFLAGS="$(UNIX_SYSCFLAGS) -DLUA_USE_POSIX -DLUA_USE_DLOPEN" SYSLIBS="-Wl,-E"
 
 FreeBSD NetBSD OpenBSD freebsd:
-	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_LINUX -DLUA_USE_READLINE -I/usr/include/edit" SYSLIBS="-Wl,-E -ledit" CC="cc"
+	$(MAKE) $(ALL) SYSCFLAGS="$(UNIX_SYSCFLAGS) -DLUA_USE_LINUX -DLUA_USE_READLINE -I/usr/include/edit" SYSLIBS="-Wl,-E -ledit" CC="cc"
 
 Linux linux:
-	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_LINUX" SYSLIBS="-Wl,-E -ldl"
+	$(MAKE) $(ALL) SYSCFLAGS="$(UNIX_SYSCFLAGS) -DLUA_USE_LINUX" SYSLIBS="-Wl,-E -ldl"
 
 linux-readline:
-	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_LINUX -DLUA_USE_READLINE" SYSLIBS="-Wl,-E -ldl -lreadline"
+	$(MAKE) $(ALL) SYSCFLAGS="$(UNIX_SYSCFLAGS) -DLUA_USE_LINUX -DLUA_USE_READLINE" SYSLIBS="-Wl,-E -ldl -lreadline"
 
 Darwin macos macosx:
-	$(MAKE) $(ALL) SYSCFLAGS="-DLUA_USE_MACOSX" SYSLIBS="-lreadline"
+	$(MAKE) $(ALL) SYSCFLAGS="$(UNIX_SYSCFLAGS) -DLUA_USE_MACOSX" SYSLIBS="-lreadline"
 
 mingw:
 	$(MAKE) "LUA_A=lua55.dll" "LUA_T=lua.exe" "LUAC_T=luac.exe" \
