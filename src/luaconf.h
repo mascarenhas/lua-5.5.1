@@ -240,7 +240,19 @@
 
 #else			/* }{ */
 
+#if defined(LUA_USE_BROWSER)	/* { */
+/*
+** A browser (WebAssembly) image does not run from a filesystem path, so it
+** has no meaningful executable directory.  Keep the default templates and
+** drop only the '!/../' root, which would otherwise prefix every entry.
+** The browser target defines LUA_USE_BROWSER; see 'make browser' and
+** doc/readme.html.
+*/
+#define LUA_ROOT	""
+#else
 #define LUA_ROOT	"!/../"
+#endif				/* } */
+
 #define LUA_LDIR	LUA_ROOT "share/lua/" LUA_VDIR "/"
 #define LUA_CDIR	LUA_ROOT "lib/lua/" LUA_VDIR "/"
 
