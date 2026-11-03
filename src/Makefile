@@ -83,7 +83,21 @@ BROWSER_LONGJMP= emscripten
 # drops the executable-relative '!/../' package-path root.  MYCFLAGS is
 # appended, exactly as the native CFLAGS does.
 BROWSER_SYSCFLAGS= -DLUA_USE_POSIX -DLUA_USE_BROWSER \
+	-DLUAI_MAXCCALLS=100 \
 	-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP)
+# A JavaScript engine exhausts its own stack long before a native one, and a
+# Wasm call frame is far larger than a native frame.  Measured on the pinned
+# toolchain (emsdk 6.0.13; Node 24.19.0, Chromium 156, Firefox 142, WebKit 26),
+# a protected-call or coroutine-resume level costs about 4.9 KB of engine stack
+# per C-call count, against about 2.9 KB for a mixed Lua/Titan level, so the
+# tightest engine ceiling is 204 counts (V8).  With Lua's default 200 the
+# catchable 'C stack overflow' still trips first, but with a 1.03x margin: a
+# few percent of engine drift would turn it into the engine's uncatchable
+# RangeError.  The browser build therefore stops at 100, inside the half rule
+# against that ceiling: a protected-call chain passes 96 levels, mixed Lua/Titan
+# recursion passes 95 (98 counts at the trip), and the margin is 2.08x
+# (204 / 98).  This is browser-only; the native targets keep the default 200.
+# Native, macOS and Windows builds read their own SYSCFLAGS and are unchanged.
 # Browser objects live in their own directory, so a native build and a browser
 # build of the same tree never reuse or clobber each other's objects.
 BROWSER_DIR= browser
