@@ -69,6 +69,9 @@ The archive is compiled with
 applies to every browser object here, not only to the compiler modules as the
 native build does: the record states one `cflags` value for the whole archive,
 so a per-object extra would make that statement false for the other objects.
+Browser Make goals and the installer clear ambient `EMCC_CFLAGS`, so unrecorded
+environment flags cannot replace these settings; use the recorded `MYCFLAGS`
+and `CMCFLAGS` inputs for supported extras. Native goals retain their environment.
 
 This pins Emscripten 6.0.13's **legacy** Wasm exception instruction encoding,
 not the standardized EH encoding. The pin labels Wasm longjmp experimental.

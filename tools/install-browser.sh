@@ -29,6 +29,8 @@
 #   FORK_REVISION=<40-hex commit> make install-browser PREFIX=/some/prefix
 
 set -eu
+# This script is also callable directly, outside the browser Make targets.
+unset EMCC_CFLAGS
 
 fail() {
 	printf 'install-browser: %s\n' "$*" >&2
@@ -302,11 +304,10 @@ number_type=$(printf '%s\n' "$numeric_output" | awk '
 numeric="integer=$integer_type,float=$number_type"
 
 # ---- the Wasm target features ----------------------------------------------
-# A probe object compiled with exactly the recorded flags declares the feature
-# set every reader of these objects expects.  Lua's own 'ldo.c' calls setjmp,
-# so its object additionally declares '-shared-mem'; that is a per-object
-# property of Lua's source, not of the toolchain configuration the record
-# describes.
+# A probe object compiled with exactly the recorded flags declares the common
+# toolchain feature set. Wasm-SJLJ objects share its +exception-handling
+# baseline, including Lua's ldo.c; the older JavaScript-SJLJ lowering's
+# per-object -shared-mem marker is not emitted by this configuration.
 
 cat >"$tmp/feature-probe.c" <<'EOF'
 /* Compiled only to read the toolchain's target_features section. */

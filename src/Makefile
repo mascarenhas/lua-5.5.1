@@ -248,6 +248,10 @@ mingw:
 # browser build, and rewrites the stamp only when the configuration changed.
 browser-config-changed:
 
+# Browser recipes and their recursive makes must use only the recorded flags.
+# Target-specific export leaves native goals' environment unchanged.
+browser browser-version-check browser-js browser-test browser-config browser-echo: export EMCC_CFLAGS =
+
 browser: browser-version-check
 	@$(MAKE) $(BROWSER_A) $(BROWSER_FLAGS)
 

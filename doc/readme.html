@@ -210,6 +210,8 @@ and liblua.a (the library).
   for longjmp (experimental in that toolchain); consumers use both on every
   compile and link. The browser C-call limit remains 100, without changing
   native targets.
+  Browser Make goals and the installer clear <KBD>EMCC_CFLAGS</KBD>;
+  native goals retain their environment.
 
 <P>
   <KBD>make install-browser PREFIX=xxx</KBD> writes
