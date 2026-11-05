@@ -72,9 +72,9 @@ BROWSER_CC= emcc
 BROWSER_AR= emar rcu
 BROWSER_RANLIB= emranlib
 BROWSER_TARGET= wasm32-unknown-emscripten
-# Longjmp implementation the archive is compiled with.  Titan's 'titan.h'
-# mirrors 'lua_longjmp', so the record carries this mode.
-BROWSER_LONGJMP= emscripten
+# Longjmp uses Wasm EH, with Emscripten 6.0.13's legacy instruction encoding.
+# Titan mirrors lua_longjmp and compiles every consumer with the same settings.
+BROWSER_LONGJMP= wasm
 # No -fPIC: the archive is a static, non-PIC artifact.  PIC Wasm objects take
 # their addresses from GOT.mem/GOT.func imports (what a side module looks
 # like), and every consumer of this archive reads relocatable static objects,
@@ -84,19 +84,10 @@ BROWSER_LONGJMP= emscripten
 # appended, exactly as the native CFLAGS does.
 BROWSER_SYSCFLAGS= -DLUA_USE_POSIX -DLUA_USE_BROWSER \
 	-DLUAI_MAXCCALLS=100 \
-	-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP)
-# A JavaScript engine exhausts its own stack long before a native one, and a
-# Wasm call frame is far larger than a native frame.  Measured on the pinned
-# toolchain (emsdk 6.0.13; Node 24.19.0, Chromium 156, Firefox 142, WebKit 26),
-# a protected-call or coroutine-resume level costs about 4.9 KB of engine stack
-# per C-call count, against about 2.9 KB for a mixed Lua/Titan level, so the
-# tightest engine ceiling is 204 counts (V8).  With Lua's default 200 the
-# catchable 'C stack overflow' still trips first, but with a 1.03x margin: a
-# few percent of engine drift would turn it into the engine's uncatchable
-# RangeError.  The browser build therefore stops at 100, inside the half rule
-# against that ceiling: a protected-call chain passes 96 levels, mixed Lua/Titan
-# recursion passes 95 (98 counts at the trip), and the margin is 2.08x
-# (204 / 98).  This is browser-only; the native targets keep the default 200.
+	-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP) -sWASM_LEGACY_EXCEPTIONS=1
+# Retain the browser-only C-call limit measured under JavaScript SJLJ.
+# Switching longjmp lowering alone does not requalify all recursive Lua/C
+# shapes on every engine/profile. Native targets retain their default 200.
 # Native, macOS and Windows builds read their own SYSCFLAGS and are unchanged.
 # Browser objects live in their own directory, so a native build and a browser
 # build of the same tree never reuse or clobber each other's objects.
@@ -190,7 +181,7 @@ $(BROWSER_A): $(BROWSER_O) $(BROWSER_STAMP)
 # delivery: Titan links the archive, and the runner belongs to the caller.
 $(BROWSER_JS): $(BROWSER_JSO) $(BROWSER_A) $(BROWSER_STAMP)
 	$(CC) -o $@ $(LDFLAGS) $(BROWSER_JSO) $(BROWSER_A) $(LIBS) \
-		-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP)
+		-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP) -sWASM_LEGACY_EXCEPTIONS=1
 
 test:
 	./$(LUA_T) -v
