@@ -29,6 +29,8 @@
 #   FORK_REVISION=<40-hex commit> make install-browser PREFIX=/some/prefix
 
 set -eu
+# This script is also callable directly, outside the browser Make targets.
+unset EMCC_CFLAGS
 
 fail() {
 	printf 'install-browser: %s\n' "$*" >&2
@@ -199,18 +201,32 @@ esac
 cflags_normalized=
 defines=
 longjmp=
+legacy_exceptions=
+eh_flags=
 pic_flags=
 previous=
 for flag in $cflags; do
 	cflags_normalized=${cflags_normalized:+$cflags_normalized }$flag
 	case $flag in
 	-D*) defines=${defines:+$defines }$flag ;;
-	-sSUPPORT_LONGJMP=*) longjmp=${flag#-sSUPPORT_LONGJMP=} ;;
-	SUPPORT_LONGJMP=*)
-		if [ "$previous" = "-s" ]; then
-			longjmp=${flag#SUPPORT_LONGJMP=}
-		fi ;;
 	-fPIC | -fpic | -fPIE | -fpie) pic_flags="$pic_flags $flag" ;;
+	-fwasm-exceptions | -fno-wasm-exceptions | -mexception-handling | \
+	-mno-exception-handling | -mlegacy-exception-handling | \
+	-mno-legacy-exception-handling) eh_flags="$eh_flags $flag" ;;
+	esac
+	setting=
+	case $flag in
+	-s?*) setting=${flag#-s} ;;
+	*) if [ "$previous" = "-s" ]; then setting=$flag; fi ;;
+	esac
+	case $setting in
+	SUPPORT_LONGJMP | SUPPORT_LONGJMP=1 | NO_SUPPORT_LONGJMP=0) longjmp=emscripten ;;
+	SUPPORT_LONGJMP=*) longjmp=${setting#*=} ;;
+	NO_SUPPORT_LONGJMP | NO_SUPPORT_LONGJMP=*) longjmp=0 ;;
+	WASM_LEGACY_EXCEPTIONS | WASM_LEGACY_EXCEPTIONS=1 | \
+	NO_WASM_LEGACY_EXCEPTIONS=0) legacy_exceptions=1 ;;
+	WASM_LEGACY_EXCEPTIONS=*) legacy_exceptions=${setting#*=} ;;
+	NO_WASM_LEGACY_EXCEPTIONS | NO_WASM_LEGACY_EXCEPTIONS=*) legacy_exceptions=0 ;;
 	esac
 	previous=$flag
 done
@@ -222,10 +238,15 @@ fi
 # The record states one longjmp mode for the archive, so the effective one --
 # the last -s flag emcc sees -- must be that mode.  A caller-owned MYCFLAGS that
 # appends another mode would otherwise be certified as this one.
+[ "$sjlj" = wasm ] || fail "the browser build requires sjlj=wasm, not sjlj=$sjlj"
 [ -n "$longjmp" ] || fail \
 	"the browser build must compile with -sSUPPORT_LONGJMP=$sjlj; the compile flags are: $cflags_normalized"
 [ "$longjmp" = "$sjlj" ] || fail \
 	"the browser build resolves -sSUPPORT_LONGJMP=$longjmp, but the build record would state sjlj=$sjlj; the compile flags are: $cflags_normalized"
+[ "$legacy_exceptions" = 1 ] || fail \
+	"the browser build requires explicit -sWASM_LEGACY_EXCEPTIONS=1; the effective setting is '${legacy_exceptions:-missing}'; the compile flags are: $cflags_normalized"
+[ -z "$eh_flags" ] || fail \
+	"the browser build owns Wasm exception lowering; remove native exception flags ($eh_flags)"
 [ -z "$pic_flags" ] || fail \
 	"the browser build must not compile position-independent objects ($pic_flags): a PIC Wasm object imports GOT.mem/GOT.func, which a static object reader rejects; the compile flags are: $cflags_normalized"
 
@@ -283,11 +304,10 @@ number_type=$(printf '%s\n' "$numeric_output" | awk '
 numeric="integer=$integer_type,float=$number_type"
 
 # ---- the Wasm target features ----------------------------------------------
-# A probe object compiled with exactly the recorded flags declares the feature
-# set every reader of these objects expects.  Lua's own 'ldo.c' calls setjmp,
-# so its object additionally declares '-shared-mem'; that is a per-object
-# property of Lua's source, not of the toolchain configuration the record
-# describes.
+# A probe object compiled with exactly the recorded flags declares the common
+# toolchain feature set. Wasm-SJLJ objects share its +exception-handling
+# baseline, including Lua's ldo.c; the older JavaScript-SJLJ lowering's
+# per-object -shared-mem marker is not emitted by this configuration.
 
 cat >"$tmp/feature-probe.c" <<'EOF'
 /* Compiled only to read the toolchain's target_features section. */

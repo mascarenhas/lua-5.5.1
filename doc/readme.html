@@ -203,9 +203,15 @@ and liblua.a (the library).
   objects; <KBD>make clean</KBD> removes both.
   The archive is built with <KBD>-DLUA_USE_POSIX -DLUA_USE_BROWSER</KBD>
   (no dynamic loader and no readline) and
-  <KBD>-sSUPPORT_LONGJMP=emscripten</KBD>, and without <KBD>-fPIC</KBD>:
+  <KBD>-sSUPPORT_LONGJMP=wasm -sWASM_LEGACY_EXCEPTIONS=1</KBD>, and without <KBD>-fPIC</KBD>:
   it is a static artifact, and a PIC Wasm object imports its addresses from
   <TT>GOT.mem</TT>/<TT>GOT.func</TT> like a side module.
+  The two settings pin Emscripten 6.0.13's legacy Wasm exception encoding
+  for longjmp (experimental in that toolchain); consumers use both on every
+  compile and link. The browser C-call limit remains 100, without changing
+  native targets.
+  Browser Make goals and the installer clear <KBD>EMCC_CFLAGS</KBD>;
+  native goals retain their environment.
 
 <P>
   <KBD>make install-browser PREFIX=xxx</KBD> writes

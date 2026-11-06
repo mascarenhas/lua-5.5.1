@@ -62,13 +62,23 @@ The archive is compiled with
 | `-fPIC` | absent: the archive is a static, non-PIC artifact. Emscripten accepts `-fPIC`, but a PIC Wasm object carries `GOT.mem`/`GOT.func` imports — the shape of a side module — which the consumers of a static Lua archive reject |
 | defines | `-DLUA_USE_POSIX -DLUA_USE_BROWSER` |
 | dynamic loading | none: no `LUA_USE_DLOPEN`, no readline |
-| longjmp | `-sSUPPORT_LONGJMP=emscripten`, in `SYSCFLAGS` and therefore on every compile line |
+| longjmp | `-sSUPPORT_LONGJMP=wasm -sWASM_LEGACY_EXCEPTIONS=1`, in `SYSCFLAGS` and therefore on every compile line |
 | package paths | `LUA_USE_BROWSER` drops the executable-relative `!/../` root, leaving `share/lua/5.5/…`, `lib/lua/5.5/…` and `./…` |
 
 `MYCFLAGS` is appended to `CFLAGS`, exactly as in the native build. `CMCFLAGS`
 applies to every browser object here, not only to the compiler modules as the
 native build does: the record states one `cflags` value for the whole archive,
 so a per-object extra would make that statement false for the other objects.
+Browser Make goals and the installer clear ambient `EMCC_CFLAGS`, so unrecorded
+environment flags cannot replace these settings; use the recorded `MYCFLAGS`
+and `CMCFLAGS` inputs for supported extras. Native goals retain their environment.
+
+This pins Emscripten 6.0.13's **legacy** Wasm exception instruction encoding,
+not the standardized EH encoding. The pin labels Wasm longjmp experimental.
+Every consumer must use both settings when compiling and linking; changing
+only a final link flag cannot change the longjmp lowering of an old object.
+This choice is independent of coroutine stack switching. The browser-only
+`LUAI_MAXCCALLS=100` limit remains unchanged; native targets retain 200.
 
 The browser objects depend on every header they compile against, and they
 record the configuration and the member list that produced them
@@ -130,7 +140,7 @@ headers_sha256=<digest over the sorted (name, SHA-256) of include/*.h>
 emscripten_version=6.0.13
 target=wasm32-unknown-emscripten
 wasm_features=<canonical sorted feature list>
-sjlj=emscripten
+sjlj=wasm
 lua_defines=<sorted -D flags>
 numeric=<luaconf numeric configuration>
 cflags=<effective compile flags>
@@ -144,10 +154,10 @@ cflags=<effective compile flags>
 | `emscripten_version` | The pin, checked against the recording `emcc --version` during the install. |
 | `target` | The physical ABI/toolchain triple. |
 | `wasm_features` | The `target_features` entries of an object compiled with these flags: space-separated `+name`/`-name` tokens, ascending byte order of the token. |
-| `sjlj` | The longjmp mode the archive was compiled with, `emscripten`: the last `-sSUPPORT_LONGJMP=` emcc sees. The install reads that effective value and refuses a build whose last one differs from the mode the record would state. |
+| `sjlj` | The longjmp mode the archive was compiled with, `wasm`: the last `-sSUPPORT_LONGJMP` emcc sees, in joined or split form. A bare setting or `=1` selects JavaScript SJLJ without `-fwasm-exceptions` and is rejected, as is a disabled mode. |
 | `lua_defines` | The `-D` flags of `cflags`, sorted with `LC_ALL=C sort -u`, space-separated. |
 | `numeric` | `integer=<C type of LUA_INTEGER>,float=<C type of LUA_NUMBER>`, as the preprocessor expands them from the installed `luaconf.h`. |
-| `cflags` | The effective compile flags for every object in the archive, whitespace-normalized to single spaces, in the order the compiler saw them, including any `MYCFLAGS` and `CMCFLAGS`. |
+| `cflags` | The effective compile flags for every object in the archive, whitespace-normalized to single spaces, in compiler order, including `MYCFLAGS` and `CMCFLAGS`. They must explicitly select legacy EH with `-sWASM_LEGACY_EXCEPTIONS=1` (a bare setting or `-sNO_WASM_LEGACY_EXCEPTIONS=0` is equivalent). The record's key set and version are unchanged. |
 
 ### Byte format of `headers_sha256`
 
@@ -184,10 +194,9 @@ recorded flags, read from the `target_features` custom section that Emscripten
 (`--enable-*` names, a different set), so `tools/wasm-target-features.awk` reads
 the section from a one-function probe object compiled during the install.
 
-Per-object entries can be stricter than this baseline: Lua's `ldo.c` calls
-`setjmp`, so its object additionally declares `-shared-mem`. The record
-describes the toolchain configuration, which is what a consumer's own objects
-must match.
+The baseline includes `+exception-handling`. Per-object feature restrictions
+remain in each object's `target_features`; the record describes the common
+toolchain configuration which a consumer's objects must match.
 
 ### Failure modes
 
@@ -202,8 +211,13 @@ must match.
   caller flag, does not define `LUA_USE_POSIX` and `LUA_USE_BROWSER`, or does
   define `LUA_USE_DLOPEN` (directly, through an assignment or through an
   indirect `LUA_USE_LINUX`);
-- the effective `-sSUPPORT_LONGJMP=` differs from the recorded `sjlj`, or is
-  absent;
+- the recorded `sjlj` is not `wasm`, or the effective `-sSUPPORT_LONGJMP`
+  mode differs from it or is absent;
+- the explicit effective `WASM_LEGACY_EXCEPTIONS` setting is missing or not 1,
+  including a joined or split `NO_` alias that disables it;
+- native exception-lowering flags (`-f[no-]wasm-exceptions`,
+  `-m[no-]exception-handling`, or `-m[no-]legacy-exception-handling`) try to
+  override the pinned settings;
 - the flags request position-independent objects (`-fPIC`, `-fpic`, `-fPIE`,
   `-fpie`);
 - `luaconf.h` cannot be preprocessed, or does not define `LUA_INTEGER` or
