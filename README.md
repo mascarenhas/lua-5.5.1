@@ -46,7 +46,7 @@ Even in Linux/MacOS you can compile once and install in different paths, as Lua 
 
 ## Browser (WebAssembly)
 
-`make browser` builds a static Lua library for WebAssembly with wasi-sdk 34.0,
+`make browser` builds a static Lua library for WebAssembly with wasi-sdk 34,
 and `make install-browser` installs it together with a build record that
 describes exactly how it was built. Native targets are untouched: browser
 objects live in `src/browser/obj`, and the browser installation is confined to
@@ -56,7 +56,7 @@ The archive is compiled with
 
 | Setting | Value |
 | --- | --- |
-| compiler | wasi-sdk 34.0's `clang` (the only accepted release, named by the first line of the sdk's `VERSION` file beside its `bin/`), `--target=wasm32-wasip1` |
+| compiler | wasi-sdk 34's `clang` (any `34.x` release, checked via the first line of the sdk's `VERSION` file beside its `bin/`), `--target=wasm32-wasip1` |
 | archiver | `llvm-ar rc`, ranlib `llvm-ranlib` |
 | objects | `src/browser/obj/*.o`, separate from the native build |
 | `-fPIC` | absent: the archive is a static, non-PIC artifact. A PIC Wasm object carries `GOT.mem`/`GOT.func` imports — the shape of a side module — which the consumers of a static Lua archive reject |
@@ -99,13 +99,13 @@ record the configuration and the member list that produced them
 object cannot survive as a stale member.
 
 ```bash
-$ make browser BROWSER_CC=/path/to/wasi-sdk-34.0/bin/clang
-$ make install-browser PREFIX=$HOME/.local BROWSER_CC=/path/to/wasi-sdk-34.0/bin/clang
+$ make browser BROWSER_CC=/path/to/wasi-sdk-34/bin/clang
+$ make install-browser PREFIX=$HOME/.local BROWSER_CC=/path/to/wasi-sdk-34/bin/clang
 ```
 
 With the sdk's `bin/` first on `PATH`, the default `BROWSER_CC=clang` (with
 `llvm-ar` and `llvm-ranlib`) selects it. `make browser` refuses to run when the
-compiler is missing or does not belong to wasi-sdk 34.0, and names the release
+compiler is missing or does not belong to wasi-sdk 34, and names the release
 to install. `make browser-test` additionally links `src/browser/lua.wasm`, a
 WASI command image of the interpreter, and runs it under Node's `node:wasi`
 through `tools/browser-lua.mjs` as a smoke test; that image is a toolchain
@@ -149,7 +149,7 @@ duplicated or missing key.
 fork_revision=<40-hex commit>
 archive_sha256=<SHA-256 of lib/browser/liblua.a>
 headers_sha256=<digest over the sorted (name, SHA-256) of include/*.h>
-wasi_sdk_version=34.0
+wasi_sdk_version=34
 target=wasm32-wasip1
 wasm_features=<canonical sorted feature list>
 sjlj=wasm-exnref
@@ -163,7 +163,7 @@ cflags=<effective compile flags>
 | `fork_revision` | The commit the library was built from, `git rev-parse HEAD` of this repository, read only when the source root has its own `.git`: a tree unpacked inside an unrelated checkout must not inherit that repository's commit. A tarball build has no git metadata, so it must pass `FORK_REVISION=<40-hex commit>`; without it the install fails and says so. |
 | `archive_sha256` | SHA-256 of the installed `liblua.a`, lowercase hex. `llvm-ar` writes deterministic archives, so the value is stable for a given commit, flags and wasi-sdk release. |
 | `headers_sha256` | Digest over the installed headers; byte format below. |
-| `wasi_sdk_version` | The pin, checked against the first line of the recording compiler's `../VERSION` during the install. |
+| `wasi_sdk_version` | The supported major series (`34`), matched against the first line of the recording compiler's `../VERSION` (`34` or `34.x`) during the install. |
 | `target` | The physical ABI/toolchain triple, which must also be the effective `--target` of `cflags`. |
 | `wasm_features` | The `target_features` entries of an object compiled with these flags: space-separated `+name`/`-name` tokens, ascending byte order of the token. |
 | `sjlj` | The longjmp mode the archive was compiled with, `wasm-exnref`: Wasm exception handling (`-mexception-handling`) with LLVM's Wasm longjmp lowering (`-mllvm -wasm-enable-sjlj`) and the standard encoding (`-mllvm -wasm-use-legacy-eh=false`). These two are the only backend options `cflags` may pass, each once and in the separate `-mllvm OPTION` spelling, which is what Titan's compiler accepts in a record. |
@@ -214,7 +214,7 @@ toolchain configuration which a consumer's objects must match.
 `install-browser` stops with a message naming the fix when
 
 - the compiler is not on `PATH`, or its `../VERSION` is missing or names a
-  release other than 34.0;
+  major release other than 34;
 - the archive is missing (`make browser`), or is not an `ar` archive;
 - the source root has no `.git` (a tarball) and `FORK_REVISION` was not given,
   or `FORK_REVISION` is not 40 lowercase hex characters;

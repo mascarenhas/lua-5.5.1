@@ -195,9 +195,9 @@ and liblua.a (the library).
 <P>
   <KBD>make browser</KBD> builds a WebAssembly library instead of the native
   interpreter and compiler.
-  It requires wasi-sdk 34.0 (<KBD>clang</KBD>, <KBD>llvm-ar</KBD>,
+  It requires wasi-sdk 34 (<KBD>clang</KBD>, <KBD>llvm-ar</KBD>,
   <KBD>llvm-ranlib</KBD>; pass <KBD>BROWSER_CC=xxx/bin/clang</KBD> or put the
-  sdk's <TT>bin</TT> first on <TT>PATH</TT>), refuses any other release, and
+  sdk's <TT>bin</TT> first on <TT>PATH</TT>), refuses any other major release, and
   needs a Linux or macOS host.
   The objects live in <TT>src/browser/obj</TT>, so building for the browser
   and for the native platform in the same tree never reuses the other's

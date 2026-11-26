@@ -143,13 +143,14 @@ root_abs=$(cd "$src_abs/$root" 2>/dev/null && pwd) || root_abs=
 # ---- toolchain --------------------------------------------------------------
 
 # A wasi-sdk names its release in the first line of VERSION, beside bin/.
+# Match the required major series (e.g. 34 accepts 34, 34.0, 34.1).
 remedy="install wasi-sdk-$wasi_sdk_version from https://github.com/WebAssembly/wasi-sdk/releases and pass BROWSER_CC=<sdk>/bin/clang or put <sdk>/bin first on PATH"
 cc_path=$(command -v "$cc" 2>/dev/null) || fail \
 	"'$cc' is not on PATH, but the browser target requires wasi-sdk $wasi_sdk_version; $remedy"
-found=$(sed -n 1p "${cc_path%/*}/../VERSION" 2>/dev/null || true)
+found=$(sed -n 1p "${cc_path%/*}/../VERSION" 2>/dev/null | tr -d '\r' || true)
 [ -n "$found" ] ||
 	fail "cannot read the wasi-sdk version: '$cc_path' has no ../VERSION file; $remedy"
-[ "$found" = "$wasi_sdk_version" ] || fail \
+printf '%s\n' "$found" | grep -Eq "^${wasi_sdk_version}(\.[0-9]+)*$" || fail \
 	"'$cc_path' belongs to wasi-sdk $found, but the browser target requires $wasi_sdk_version; $remedy"
 
 if command -v sha256sum >/dev/null 2>&1; then

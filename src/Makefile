@@ -66,9 +66,10 @@ ALL_T= $(LUA_A) $(LUA_IMPLIB) $(LUA_T) $(LUAC_T)
 ALL_A= $(LUA_A) $(LUA_IMPLIB)
 
 # == Browser (WebAssembly) build =============================================
-# The only supported toolchain, and the version the build record names: the
-# first line of the wasi-sdk's VERSION file, beside its bin/ directory.
-BROWSER_WASI_SDK= 34.0
+# The supported toolchain major version, and the version the build record
+# names: the first line of the wasi-sdk's VERSION file, beside its bin/
+# directory, must belong to this major series (e.g. 34, 34.0, 34.1).
+BROWSER_WASI_SDK= 34
 BROWSER_CC= clang
 BROWSER_AR= llvm-ar rc
 BROWSER_RANLIB= llvm-ranlib
@@ -275,8 +276,8 @@ browser: browser-version-check
 # bin/ directory must sit in the pinned wasi-sdk.
 browser-version-check:
 	@cc=`command -v $(BROWSER_CC) 2>/dev/null`; \
-	version=`[ -n "$$cc" ] && sed -n 1p "$${cc%/*}/../VERSION" 2>/dev/null`; \
-	if [ "$$version" != "$(BROWSER_WASI_SDK)" ]; then \
+	version=`[ -n "$$cc" ] && sed -n 1p "$${cc%/*}/../VERSION" 2>/dev/null | tr -d '\r'`; \
+	if ! printf '%s\n' "$$version" | grep -Eq "^$(BROWSER_WASI_SDK)(\.[0-9]+)*$$"; then \
 		echo "Error: 'make browser' requires wasi-sdk $(BROWSER_WASI_SDK);" \
 			"'$(BROWSER_CC)' belongs to '$${version:-no wasi-sdk}'." >&2; \
 		echo "Install wasi-sdk-$(BROWSER_WASI_SDK) from" \
