@@ -302,7 +302,12 @@ static int io_popen (lua_State *L) {
 static int io_tmpfile (lua_State *L) {
   LStream *p = newfile(L);
   errno = 0;
+#if defined(LUA_USE_BROWSER)
+  errno = ENOSYS;  /* a browser image has no temporary files */
+  p->f = NULL;
+#else
   p->f = tmpfile();
+#endif
   return (p->f == NULL) ? luaL_fileresult(L, 0, NULL) : 1;
 }
 

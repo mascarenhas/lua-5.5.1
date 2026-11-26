@@ -46,9 +46,9 @@ Even in Linux/MacOS you can compile once and install in different paths, as Lua 
 
 ## Browser (WebAssembly)
 
-`make browser` builds a static Lua library for WebAssembly with Emscripten
-6.0.13, and `make install-browser` installs it together with a build record
-that describes exactly how it was built. Native targets are untouched: browser
+`make browser` builds a static Lua library for WebAssembly with wasi-sdk 34,
+and `make install-browser` installs it together with a build record that
+describes exactly how it was built. Native targets are untouched: browser
 objects live in `src/browser/obj`, and the browser installation is confined to
 `PREFIX/lib/browser`.
 
@@ -56,50 +56,62 @@ The archive is compiled with
 
 | Setting | Value |
 | --- | --- |
-| compiler | `emcc` (Emscripten 6.0.13, the only accepted version) |
-| archiver | `emar rcu`, ranlib `emranlib` |
+| compiler | wasi-sdk 34's `clang` (any `34.x` release, checked via the first line of the sdk's `VERSION` file beside its `bin/`), `--target=wasm32-wasip1` |
+| archiver | `llvm-ar rc`, ranlib `llvm-ranlib` |
 | objects | `src/browser/obj/*.o`, separate from the native build |
-| `-fPIC` | absent: the archive is a static, non-PIC artifact. Emscripten accepts `-fPIC`, but a PIC Wasm object carries `GOT.mem`/`GOT.func` imports — the shape of a side module — which the consumers of a static Lua archive reject |
-| defines | `-DLUA_USE_POSIX -DLUA_USE_BROWSER` |
+| `-fPIC` | absent: the archive is a static, non-PIC artifact. A PIC Wasm object carries `GOT.mem`/`GOT.func` imports — the shape of a side module — which the consumers of a static Lua archive reject |
+| defines | `-DLUA_USE_BROWSER -DLUA_USE_OFF_T -Dl_signalT=int -DLUAI_MAXCCALLS=100 -D_WASI_EMULATED_PROCESS_CLOCKS` |
+| platform | no `LUA_USE_POSIX`: wasi-libc has no signals, processes, `popen` or `mkstemp`. `LUA_USE_OFF_T` keeps `fseeko`/`ftello`, `l_signalT=int` keeps `<signal.h>` out of `lstate.h`, and the process-clock emulation supplies `clock()` |
 | dynamic loading | none: no `LUA_USE_DLOPEN`, no readline |
-| longjmp | `-sSUPPORT_LONGJMP=wasm -sWASM_LEGACY_EXCEPTIONS=1`, in `SYSCFLAGS` and therefore on every compile line |
+| longjmp | `-mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false`, in `SYSCFLAGS` and therefore on every compile line |
+| debug info | `-gdwarf-4 -gline-tables-only`, the line tables Titan maps into its trace table |
 | package paths | `LUA_USE_BROWSER` drops the executable-relative `!/../` root, leaving `share/lua/5.5/…`, `lib/lua/5.5/…` and `./…` |
 
 `MYCFLAGS` is appended to `CFLAGS`, exactly as in the native build. `CMCFLAGS`
 applies to every browser object here, not only to the compiler modules as the
 native build does: the record states one `cflags` value for the whole archive,
 so a per-object extra would make that statement false for the other objects.
-Browser Make goals and the installer clear ambient `EMCC_CFLAGS`, so unrecorded
-environment flags cannot replace these settings; use the recorded `MYCFLAGS`
-and `CMCFLAGS` inputs for supported extras. Native goals retain their environment.
+Use the recorded `MYCFLAGS` and `CMCFLAGS` inputs for supported extras.
+Browser Make goals and the installer clear clang's ambient
+`CCC_OVERRIDE_OPTIONS`, `CPATH`, `C_INCLUDE_PATH`, `CPLUS_INCLUDE_PATH`,
+`OBJC_INCLUDE_PATH`, `LIBRARY_PATH` and `COMPILER_PATH`, so unrecorded
+environment input cannot add options, headers, libraries or tools; native goals
+retain their environment.
 
-This pins Emscripten 6.0.13's **legacy** Wasm exception instruction encoding,
-not the standardized EH encoding. The pin labels Wasm longjmp experimental.
-Every consumer must use both settings when compiling and linking; changing
-only a final link flag cannot change the longjmp lowering of an old object.
-This choice is independent of coroutine stack switching. The browser-only
+Longjmp uses Wasm exception handling with the **standard** (exnref)
+instruction encoding; LLVM still selects the legacy encoding unless
+`-wasm-use-legacy-eh=false` says otherwise. Every consumer must compile with
+the same settings and link wasi-sdk's `-lsetjmp`; changing only a final link
+flag cannot change the longjmp lowering of an old object. This choice is
+independent of coroutine stack switching. The browser-only
 `LUAI_MAXCCALLS=100` limit remains unchanged; native targets retain 200.
+
+Without `LUA_USE_POSIX`, the browser build also guards the few library
+functions wasi-libc lacks: `os.date` and `os.time` use `gmtime_r` and
+`localtime_r`, `os.tmpname` fails ("unable to generate a unique filename"),
+`io.tmpfile` fails with `ENOSYS`, and `os.execute` reports no shell.
 
 The browser objects depend on every header they compile against, and they
 record the configuration and the member list that produced them
 (`src/browser/obj/.build-config`). Changing a header, `CC`, `CFLAGS`,
-`CMCFLAGS`, the object list or the Emscripten build therefore rebuilds them,
-and `liblua.a` is recreated from exactly the current member list, so a removed
+`CMCFLAGS`, the object list or the wasi-sdk therefore rebuilds them, and
+`liblua.a` is recreated from exactly the current member list, so a removed
 object cannot survive as a stale member.
 
 ```bash
-$ source /path/to/emsdk/emsdk_env.sh     # provides emcc 6.0.13 and node
-$ make browser
-$ make install-browser PREFIX=$HOME/.local
+$ make browser BROWSER_CC=/path/to/wasi-sdk-34/bin/clang
+$ make install-browser PREFIX=$HOME/.local BROWSER_CC=/path/to/wasi-sdk-34/bin/clang
 ```
 
-`make browser` refuses to run when `emcc` is missing or reports a version other
-than 6.0.13, and names the `emsdk install` command to fix it. `make browser-test`
-additionally links `src/browser/lua.js` and runs it under Node as a smoke test;
-that image is a toolchain check, not a delivery. Both targets use `node` from
-`PATH`; pass `NODE=/path/to/node` to choose another one, such as the Node that
-emsdk installs. A build needs a Linux or macOS host; the `make browser` recipe
-itself needs a POSIX shell.
+With the sdk's `bin/` first on `PATH`, the default `BROWSER_CC=clang` (with
+`llvm-ar` and `llvm-ranlib`) selects it. `make browser` refuses to run when the
+compiler is missing or does not belong to wasi-sdk 34, and names the release
+to install. `make browser-test` additionally links `src/browser/lua.wasm`, a
+WASI command image of the interpreter, and runs it under Node's `node:wasi`
+through `tools/browser-lua.mjs` as a smoke test; that image is a toolchain
+check, not a delivery. It uses `node` from `PATH`; pass `NODE=/path/to/node`
+to choose another one. A build needs a Linux or macOS host; the `make browser`
+recipe itself needs a POSIX shell.
 
 ## The browser installation
 
@@ -133,14 +145,14 @@ per key, in this order. The key set is closed: a reader must reject an unknown,
 duplicated or missing key.
 
 ```text
-# Lua 5.5.1 browser build record v1
+# Lua 5.5.1 browser build record v2
 fork_revision=<40-hex commit>
 archive_sha256=<SHA-256 of lib/browser/liblua.a>
 headers_sha256=<digest over the sorted (name, SHA-256) of include/*.h>
-emscripten_version=6.0.13
-target=wasm32-unknown-emscripten
+wasi_sdk_version=34
+target=wasm32-wasip1
 wasm_features=<canonical sorted feature list>
-sjlj=wasm
+sjlj=wasm-exnref
 lua_defines=<sorted -D flags>
 numeric=<luaconf numeric configuration>
 cflags=<effective compile flags>
@@ -149,15 +161,15 @@ cflags=<effective compile flags>
 | Key | Meaning |
 | --- | --- |
 | `fork_revision` | The commit the library was built from, `git rev-parse HEAD` of this repository, read only when the source root has its own `.git`: a tree unpacked inside an unrelated checkout must not inherit that repository's commit. A tarball build has no git metadata, so it must pass `FORK_REVISION=<40-hex commit>`; without it the install fails and says so. |
-| `archive_sha256` | SHA-256 of the installed `liblua.a`, lowercase hex. `emar` writes deterministic archives, so the value is stable for a given commit, flags and Emscripten version. |
+| `archive_sha256` | SHA-256 of the installed `liblua.a`, lowercase hex. `llvm-ar` writes deterministic archives, so the value is stable for a given commit, flags and wasi-sdk release. |
 | `headers_sha256` | Digest over the installed headers; byte format below. |
-| `emscripten_version` | The pin, checked against the recording `emcc --version` during the install. |
-| `target` | The physical ABI/toolchain triple. |
+| `wasi_sdk_version` | The supported major series (`34`), matched against the first line of the recording compiler's `../VERSION` (`34` or `34.x`) during the install. |
+| `target` | The physical ABI/toolchain triple, which must also be the effective `--target` of `cflags`. |
 | `wasm_features` | The `target_features` entries of an object compiled with these flags: space-separated `+name`/`-name` tokens, ascending byte order of the token. |
-| `sjlj` | The longjmp mode the archive was compiled with, `wasm`: the last `-sSUPPORT_LONGJMP` emcc sees, in joined or split form. A bare setting or `=1` selects JavaScript SJLJ without `-fwasm-exceptions` and is rejected, as is a disabled mode. |
+| `sjlj` | The longjmp mode the archive was compiled with, `wasm-exnref`: Wasm exception handling (`-mexception-handling`) with LLVM's Wasm longjmp lowering (`-mllvm -wasm-enable-sjlj`) and the standard encoding (`-mllvm -wasm-use-legacy-eh=false`). These two are the only backend options `cflags` may pass, each once and in the separate `-mllvm OPTION` spelling, which is what Titan's compiler accepts in a record. |
 | `lua_defines` | The `-D` flags of `cflags`, sorted with `LC_ALL=C sort -u`, space-separated. |
 | `numeric` | `integer=<C type of LUA_INTEGER>,float=<C type of LUA_NUMBER>`, as the preprocessor expands them from the installed `luaconf.h`. |
-| `cflags` | The effective compile flags for every object in the archive, whitespace-normalized to single spaces, in compiler order, including `MYCFLAGS` and `CMCFLAGS`. They must explicitly select legacy EH with `-sWASM_LEGACY_EXCEPTIONS=1` (a bare setting or `-sNO_WASM_LEGACY_EXCEPTIONS=0` is equivalent). The record's key set and version are unchanged. |
+| `cflags` | The effective compile flags for every object in the archive, whitespace-normalized to single spaces, in compiler order, including `MYCFLAGS` and `CMCFLAGS`. |
 
 ### Byte format of `headers_sha256`
 
@@ -188,8 +200,7 @@ where `sorted` is Python's byte-order sort of the names.
 ### `wasm_features`
 
 This is the list of features declared by an object the build compiles with the
-recorded flags, read from the `target_features` custom section that Emscripten
-6.0.13 emits. Emscripten has no option that prints the section, and
+recorded flags, read from its `target_features` custom section.
 `wasm-opt --print-features` reports binaryen's own canonicalization
 (`--enable-*` names, a different set), so `tools/wasm-target-features.awk` reads
 the section from a one-function probe object compiled during the install.
@@ -202,24 +213,30 @@ toolchain configuration which a consumer's objects must match.
 
 `install-browser` stops with a message naming the fix when
 
-- `emcc` is not on `PATH`, or reports a version other than 6.0.13, or its
-  version cannot be read;
+- the compiler is not on `PATH`, or its `../VERSION` is missing or names a
+  major release other than 34;
 - the archive is missing (`make browser`), or is not an `ar` archive;
 - the source root has no `.git` (a tarball) and `FORK_REVISION` was not given,
   or `FORK_REVISION` is not 40 lowercase hex characters;
 - the effective Lua configuration, read from the preprocessor after every
-  caller flag, does not define `LUA_USE_POSIX` and `LUA_USE_BROWSER`, or does
-  define `LUA_USE_DLOPEN` (directly, through an assignment or through an
-  indirect `LUA_USE_LINUX`);
-- the recorded `sjlj` is not `wasm`, or the effective `-sSUPPORT_LONGJMP`
-  mode differs from it or is absent;
-- the explicit effective `WASM_LEGACY_EXCEPTIONS` setting is missing or not 1,
-  including a joined or split `NO_` alias that disables it;
-- native exception-lowering flags (`-f[no-]wasm-exceptions`,
-  `-m[no-]exception-handling`, or `-m[no-]legacy-exception-handling`) try to
-  override the pinned settings;
+  caller flag, defines `LUA_USE_POSIX` or `LUA_USE_DLOPEN` (directly, through
+  an assignment or through an indirect `LUA_USE_LINUX`), or does not define
+  `LUA_USE_BROWSER`;
+- the effective `--target` differs from the recorded `target`;
+- the recorded `sjlj` is not `wasm-exnref`, the flags lack
+  `-mexception-handling`, or their `-mllvm` options are not exactly
+  `-wasm-enable-sjlj` and `-wasm-use-legacy-eh=false`;
 - the flags request position-independent objects (`-fPIC`, `-fpic`, `-fPIE`,
   `-fpie`);
+- the flags contain any other option Titan's compiler refuses in a record
+  (`browsertarget.validate_flags`), because it changes the target, ABI or
+  exception lowering or can carry backend options: the joined
+  `-mllvm=OPTION`, `-Xclang…`, `--config…` and `@file`; `-target`,
+  `--sysroot…` and `-mexec-model…`; `-mno-exception-handling`,
+  `-m[no-]legacy-exception-handling` and `-f[no-]wasm-exceptions`; `-pie`,
+  `-shared`, `-dynamiclib`, `-rdynamic`, `-pthread`, `-m32` and `-m64`;
+  `-flto`, `-flto=…` and `-ffat-lto-objects`; `-march=…`, `-mcpu=…` and
+  `-mtune=…`;
 - `luaconf.h` cannot be preprocessed, or does not define `LUA_INTEGER` or
   `LUA_NUMBER`;
 - the feature probe cannot be compiled, or declares no features;

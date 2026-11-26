@@ -195,23 +195,28 @@ and liblua.a (the library).
 <P>
   <KBD>make browser</KBD> builds a WebAssembly library instead of the native
   interpreter and compiler.
-  It requires Emscripten 6.0.13 (<KBD>emcc</KBD>, <KBD>emar</KBD>,
-  <KBD>emranlib</KBD>), refuses any other version, and needs a Linux or macOS
-  host.
+  It requires wasi-sdk 34 (<KBD>clang</KBD>, <KBD>llvm-ar</KBD>,
+  <KBD>llvm-ranlib</KBD>; pass <KBD>BROWSER_CC=xxx/bin/clang</KBD> or put the
+  sdk's <TT>bin</TT> first on <TT>PATH</TT>), refuses any other major release, and
+  needs a Linux or macOS host.
   The objects live in <TT>src/browser/obj</TT>, so building for the browser
   and for the native platform in the same tree never reuses the other's
   objects; <KBD>make clean</KBD> removes both.
-  The archive is built with <KBD>-DLUA_USE_POSIX -DLUA_USE_BROWSER</KBD>
-  (no dynamic loader and no readline) and
-  <KBD>-sSUPPORT_LONGJMP=wasm -sWASM_LEGACY_EXCEPTIONS=1</KBD>, and without <KBD>-fPIC</KBD>:
+  The archive is built for <KBD>--target=wasm32-wasip1</KBD> with
+  <KBD>-DLUA_USE_BROWSER -DLUA_USE_OFF_T -Dl_signalT=int</KBD>
+  (no <KBD>LUA_USE_POSIX</KBD>, no dynamic loader and no readline),
+  <KBD>-mexception-handling -mllvm -wasm-enable-sjlj -mllvm
+  -wasm-use-legacy-eh=false</KBD>, and without <KBD>-fPIC</KBD>:
   it is a static artifact, and a PIC Wasm object imports its addresses from
   <TT>GOT.mem</TT>/<TT>GOT.func</TT> like a side module.
-  The two settings pin Emscripten 6.0.13's legacy Wasm exception encoding
-  for longjmp (experimental in that toolchain); consumers use both on every
-  compile and link. The browser C-call limit remains 100, without changing
-  native targets.
-  Browser Make goals and the installer clear <KBD>EMCC_CFLAGS</KBD>;
-  native goals retain their environment.
+  Longjmp uses the standard (exnref) Wasm exception encoding; consumers
+  compile with the same settings and link <KBD>-lsetjmp</KBD>. The browser
+  C-call limit remains 100, without changing native targets.
+  Browser Make goals and the installer clear clang's ambient
+  <KBD>CCC_OVERRIDE_OPTIONS</KBD>, <KBD>CPATH</KBD>, <KBD>C_INCLUDE_PATH</KBD>,
+  <KBD>CPLUS_INCLUDE_PATH</KBD>, <KBD>OBJC_INCLUDE_PATH</KBD>,
+  <KBD>LIBRARY_PATH</KBD> and <KBD>COMPILER_PATH</KBD>; native goals retain
+  their environment.
 
 <P>
   <KBD>make install-browser PREFIX=xxx</KBD> writes
@@ -224,8 +229,9 @@ and liblua.a (the library).
   <KBD>FORK_REVISION=xxx</KBD>.
 
 <P>
-  <KBD>make browser-test</KBD> links <TT>src/browser/lua.js</TT> and runs it
-  under Node as a smoke test. It is a toolchain check, not a delivery.
+  <KBD>make browser-test</KBD> links <TT>src/browser/lua.wasm</TT>, a WASI
+  command image, and runs it under Node with <TT>tools/browser-lua.mjs</TT>
+  as a smoke test. It is a toolchain check, not a delivery.
 
 <P>
   The <TT>README.md</TT> in the distribution describes the record, including

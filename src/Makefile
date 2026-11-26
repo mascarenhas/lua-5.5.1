@@ -66,25 +66,34 @@ ALL_T= $(LUA_A) $(LUA_IMPLIB) $(LUA_T) $(LUAC_T)
 ALL_A= $(LUA_A) $(LUA_IMPLIB)
 
 # == Browser (WebAssembly) build =============================================
-# The only supported toolchain, and the version the build record names.
-BROWSER_EMSCRIPTEN= 6.0.13
-BROWSER_CC= emcc
-BROWSER_AR= emar rcu
-BROWSER_RANLIB= emranlib
-BROWSER_TARGET= wasm32-unknown-emscripten
-# Longjmp uses Wasm EH, with Emscripten 6.0.13's legacy instruction encoding.
-# Titan mirrors lua_longjmp and compiles every consumer with the same settings.
-BROWSER_LONGJMP= wasm
+# The supported toolchain major version, and the version the build record
+# names: the first line of the wasi-sdk's VERSION file, beside its bin/
+# directory, must belong to this major series (e.g. 34, 34.0, 34.1).
+BROWSER_WASI_SDK= 34
+BROWSER_CC= clang
+BROWSER_AR= llvm-ar rc
+BROWSER_RANLIB= llvm-ranlib
+BROWSER_TARGET= wasm32-wasip1
+# Longjmp uses Wasm exception handling with the standard (exnref) encoding;
+# LLVM still defaults to the legacy encoding unless told otherwise.  Titan
+# mirrors lua_longjmp and compiles every consumer with the same settings.
+BROWSER_LONGJMP= wasm-exnref
 # No -fPIC: the archive is a static, non-PIC artifact.  PIC Wasm objects take
 # their addresses from GOT.mem/GOT.func imports (what a side module looks
 # like), and every consumer of this archive reads relocatable static objects,
-# so a PIC member would be an incompatible artifact.  LUA_USE_POSIX without
-# LUA_USE_DLOPEN: a Wasm image has no dynamic loader, and LUA_USE_BROWSER
-# drops the executable-relative '!/../' package-path root.  MYCFLAGS is
-# appended, exactly as the native CFLAGS does.
-BROWSER_SYSCFLAGS= -DLUA_USE_POSIX -DLUA_USE_BROWSER \
-	-DLUAI_MAXCCALLS=100 \
-	-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP) -sWASM_LEGACY_EXCEPTIONS=1
+# so a PIC member would be an incompatible artifact.  No LUA_USE_POSIX:
+# wasi-libc has no signals, processes, popen or mkstemp.  LUA_USE_OFF_T keeps
+# fseeko/ftello, l_signalT=int keeps <signal.h> out of lstate.h, and
+# LUA_USE_BROWSER drops the executable-relative '!/../' package-path root and
+# the facilities a browser image has no host for.  The process-clock
+# emulation supplies clock() to os.clock.  DWARF line tables let Titan map
+# its trace table.  MYCFLAGS is appended, exactly as the native CFLAGS does.
+BROWSER_SYSCFLAGS= --target=$(BROWSER_TARGET) -DLUA_USE_BROWSER \
+	-DLUA_USE_OFF_T -Dl_signalT=int -DLUAI_MAXCCALLS=100 \
+	-D_WASI_EMULATED_PROCESS_CLOCKS -mexception-handling \
+	-mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false \
+	-gdwarf-4 -gline-tables-only
+BROWSER_SYSLIBS= -lsetjmp -lwasi-emulated-process-clocks
 # Retain the browser-only C-call limit measured under JavaScript SJLJ.
 # Switching longjmp lowering alone does not requalify all recursive Lua/C
 # shapes on every engine/profile. Native targets retain their default 200.
@@ -94,9 +103,9 @@ BROWSER_SYSCFLAGS= -DLUA_USE_POSIX -DLUA_USE_BROWSER \
 BROWSER_DIR= browser
 BROWSER_OBJDIR= $(BROWSER_DIR)/obj
 BROWSER_A= $(BROWSER_DIR)/liblua.a
-BROWSER_JS= $(BROWSER_DIR)/lua.js
+BROWSER_LUA= $(BROWSER_DIR)/lua.wasm
 BROWSER_O= $(addprefix $(BROWSER_OBJDIR)/,$(BASE_O))
-BROWSER_JSO= $(BROWSER_OBJDIR)/lua.o
+BROWSER_LUAO= $(BROWSER_OBJDIR)/lua.o
 # One homogeneous flag set for every browser object.  The build record states
 # a single 'cflags' value for the archive, so per-object extras would make it
 # false for the other objects; CMCFLAGS therefore applies to the whole archive
@@ -117,7 +126,8 @@ BROWSER_INC= $(sort $(filter-out lua.hpp,$(wildcard *.h)))
 # an environment value.
 BROWSER_FLAGS= \
 	"CC=$(BROWSER_CC)" "AR=$(BROWSER_AR)" "RANLIB=$(BROWSER_RANLIB)" \
-	"SYSCFLAGS=$(BROWSER_SYSCFLAGS)" "MYCFLAGS=$(MYCFLAGS)" \
+	"SYSCFLAGS=$(BROWSER_SYSCFLAGS)" "SYSLDFLAGS=--target=$(BROWSER_TARGET)" \
+	"SYSLIBS=$(BROWSER_SYSLIBS)" "MYCFLAGS=$(MYCFLAGS)" \
 	"MYLDFLAGS=$(MYLDFLAGS)"
 NODE= node
 
@@ -163,10 +173,11 @@ $(BROWSER_STAMP): browser-config-changed | $(BROWSER_OBJDIR)
 		echo "CFLAGS=$(BROWSER_CFLAGS)"; \
 		echo "OBJECTS=$(BROWSER_O)"; \
 		$(CC) --version 2>/dev/null | head -n 1; \
+		cc=`command -v $(CC) 2>/dev/null` && cat "$${cc%/*}/../VERSION" 2>/dev/null; \
 	} > $@.tmp
 	@if cmp -s $@.tmp $@; then $(RM) $@.tmp; else mv $@.tmp $@; fi
 
-$(BROWSER_O) $(BROWSER_JSO): $(BROWSER_OBJDIR)/%.o: %.c $(BROWSER_INC) \
+$(BROWSER_O) $(BROWSER_LUAO): $(BROWSER_OBJDIR)/%.o: %.c $(BROWSER_INC) \
 		$(BROWSER_STAMP) | $(BROWSER_OBJDIR)
 	$(CC) $(BROWSER_CFLAGS) -c $< -o $@
 
@@ -177,11 +188,14 @@ $(BROWSER_A): $(BROWSER_O) $(BROWSER_STAMP)
 	$(AR) $@ $(BROWSER_O)
 	$(RANLIB) $@
 
-# A Node image of the interpreter.  It is a toolchain smoke test, not a
-# delivery: Titan links the archive, and the runner belongs to the caller.
-$(BROWSER_JS): $(BROWSER_JSO) $(BROWSER_A) $(BROWSER_STAMP)
-	$(CC) -o $@ $(LDFLAGS) $(BROWSER_JSO) $(BROWSER_A) $(LIBS) \
-		-sSUPPORT_LONGJMP=$(BROWSER_LONGJMP) -sWASM_LEGACY_EXCEPTIONS=1
+# A WASI command image of the interpreter.  It is a toolchain smoke test, not
+# a delivery: Titan links the archive, and the runner belongs to the caller.
+# Only the interpreter's Ctrl-C handler needs wasi-libc's signal emulation;
+# the archive stays free of it.
+$(BROWSER_LUAO): BROWSER_CFLAGS += -D_WASI_EMULATED_SIGNAL
+$(BROWSER_LUA): $(BROWSER_LUAO) $(BROWSER_A) $(BROWSER_STAMP)
+	$(CC) -o $@ $(LDFLAGS) $(BROWSER_LUAO) $(BROWSER_A) $(LIBS) \
+		-lwasi-emulated-signal
 
 test:
 	./$(LUA_T) -v
@@ -210,7 +224,7 @@ ALL= all
 help:
 	@echo "Do 'make PLATFORM' where PLATFORM is one of these:"
 	@echo "   $(PLATS)"
-	@echo "Do 'make browser' for the WebAssembly archive (Emscripten $(BROWSER_EMSCRIPTEN))."
+	@echo "Do 'make browser' for the WebAssembly archive (wasi-sdk $(BROWSER_WASI_SDK))."
 	@echo "See doc/readme.html for complete instructions."
 
 guess:
@@ -248,30 +262,36 @@ mingw:
 # browser build, and rewrites the stamp only when the configuration changed.
 browser-config-changed:
 
-# Browser recipes and their recursive makes must use only the recorded flags.
-# Target-specific export leaves native goals' environment unchanged.
-browser browser-version-check browser-js browser-test browser-config browser-echo: export EMCC_CFLAGS =
+# The recursive makes that compile and link the browser objects must use only
+# the recorded flags: clang reads extra options, include and library
+# directories and the tools it runs from these variables, so they run with
+# the variables unset. Native goals keep their environment.
+BROWSER_ENV= env -u CCC_OVERRIDE_OPTIONS -u CPATH -u C_INCLUDE_PATH \
+	-u CPLUS_INCLUDE_PATH -u OBJC_INCLUDE_PATH -u LIBRARY_PATH -u COMPILER_PATH
 
 browser: browser-version-check
-	@$(MAKE) $(BROWSER_A) $(BROWSER_FLAGS)
+	@$(BROWSER_ENV) $(MAKE) $(BROWSER_A) $(BROWSER_FLAGS)
 
+# A bare compiler name resolves through PATH; either way, the compiler's
+# bin/ directory must sit in the pinned wasi-sdk.
 browser-version-check:
-	@version=`$(BROWSER_CC) --version 2>/dev/null | head -n 1 | \
-		sed -n 's/.*) \([0-9][0-9.]*\).*/\1/p'`; \
-	if [ "$$version" != "$(BROWSER_EMSCRIPTEN)" ]; then \
-		echo "Error: 'make browser' requires Emscripten $(BROWSER_EMSCRIPTEN);" \
-			"'$(BROWSER_CC)' reports '$${version:-missing}'." >&2; \
-		echo "Install it with 'emsdk install $(BROWSER_EMSCRIPTEN) &&" \
-			"emsdk activate $(BROWSER_EMSCRIPTEN)' and source emsdk_env.sh." >&2; \
+	@cc=`command -v $(BROWSER_CC) 2>/dev/null`; \
+	version=`[ -n "$$cc" ] && sed -n 1p "$${cc%/*}/../VERSION" 2>/dev/null | tr -d '\r'`; \
+	if ! printf '%s\n' "$$version" | grep -Eq "^$(BROWSER_WASI_SDK)(\.[0-9]+)*$$"; then \
+		echo "Error: 'make browser' requires wasi-sdk $(BROWSER_WASI_SDK);" \
+			"'$(BROWSER_CC)' belongs to '$${version:-no wasi-sdk}'." >&2; \
+		echo "Install wasi-sdk-$(BROWSER_WASI_SDK) from" \
+			"https://github.com/WebAssembly/wasi-sdk/releases and pass" \
+			"BROWSER_CC=<sdk>/bin/clang or put <sdk>/bin first on PATH." >&2; \
 		exit 1; \
 	fi
 
 browser-js: browser-version-check
-	@$(MAKE) $(BROWSER_JS) $(BROWSER_FLAGS)
+	@$(BROWSER_ENV) $(MAKE) $(BROWSER_LUA) $(BROWSER_FLAGS)
 
 browser-test: browser-js
-	@$(NODE) $(BROWSER_JS) -v
-	@$(NODE) $(BROWSER_JS) -e \
+	@$(NODE) ../tools/browser-lua.mjs $(BROWSER_LUA) -v
+	@$(NODE) ../tools/browser-lua.mjs $(BROWSER_LUA) -e \
 		'assert(1 + 1 == 2); assert(("ok"):upper() == "OK"); assert(package.path:match("^share/lua/"), "browser package.path: " .. package.path); print("browser smoke ok")'
 
 browser-config:
@@ -284,7 +304,7 @@ browser-echo:
 	@echo "browser_headers= $(BROWSER_INC)"
 	@echo "browser_cc= $(BROWSER_CC)"
 	@echo "browser_target= $(BROWSER_TARGET)"
-	@echo "browser_emscripten_version= $(BROWSER_EMSCRIPTEN)"
+	@echo "browser_wasi_sdk_version= $(BROWSER_WASI_SDK)"
 	@echo "browser_sjlj= $(BROWSER_LONGJMP)"
 	@echo "browser_cflags= $(BROWSER_CFLAGS)"
 
