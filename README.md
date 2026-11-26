@@ -72,6 +72,11 @@ applies to every browser object here, not only to the compiler modules as the
 native build does: the record states one `cflags` value for the whole archive,
 so a per-object extra would make that statement false for the other objects.
 Use the recorded `MYCFLAGS` and `CMCFLAGS` inputs for supported extras.
+Browser Make goals and the installer clear clang's ambient
+`CCC_OVERRIDE_OPTIONS`, `CPATH`, `C_INCLUDE_PATH`, `CPLUS_INCLUDE_PATH`,
+`OBJC_INCLUDE_PATH`, `LIBRARY_PATH` and `COMPILER_PATH`, so unrecorded
+environment input cannot add options, headers, libraries or tools; native goals
+retain their environment.
 
 Longjmp uses Wasm exception handling with the **standard** (exnref)
 instruction encoding; LLVM still selects the legacy encoding unless

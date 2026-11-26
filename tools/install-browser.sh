@@ -29,6 +29,11 @@
 #   FORK_REVISION=<40-hex commit> make install-browser PREFIX=/some/prefix
 
 set -eu
+# This script is also callable directly, outside the browser Make targets, and
+# its probes must see only the recorded flags: clang reads extra options,
+# include and library directories and the tools it runs from these variables.
+unset CCC_OVERRIDE_OPTIONS CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH \
+	OBJC_INCLUDE_PATH LIBRARY_PATH COMPILER_PATH
 
 fail() {
 	printf 'install-browser: %s\n' "$*" >&2

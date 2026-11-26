@@ -212,6 +212,11 @@ and liblua.a (the library).
   Longjmp uses the standard (exnref) Wasm exception encoding; consumers
   compile with the same settings and link <KBD>-lsetjmp</KBD>. The browser
   C-call limit remains 100, without changing native targets.
+  Browser Make goals and the installer clear clang's ambient
+  <KBD>CCC_OVERRIDE_OPTIONS</KBD>, <KBD>CPATH</KBD>, <KBD>C_INCLUDE_PATH</KBD>,
+  <KBD>CPLUS_INCLUDE_PATH</KBD>, <KBD>OBJC_INCLUDE_PATH</KBD>,
+  <KBD>LIBRARY_PATH</KBD> and <KBD>COMPILER_PATH</KBD>; native goals retain
+  their environment.
 
 <P>
   <KBD>make install-browser PREFIX=xxx</KBD> writes
