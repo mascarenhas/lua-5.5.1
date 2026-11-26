@@ -5,8 +5,8 @@
 # 'od -An -v -tu1 OBJECT'.  The reader is deliberately tiny and total: it
 # bounds every read by the object size and fails instead of guessing.
 #
-# Why the section and not a toolchain convenience list: emcc 6.0.13 has no
-# option that prints the target features it will emit, and
+# Why the section and not a toolchain convenience list: clang has no option
+# that prints the target features it will emit, and
 # 'wasm-opt --print-features' reports binaryen's own canonicalization
 # ('--enable-*' names, a different set), while Titan's relocatable-Wasm reader
 # parses exactly this section.  Reading the section keeps the build record and

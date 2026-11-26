@@ -75,7 +75,7 @@
 ** where it uses gmtime_r/localtime_r
 */
 
-#if defined(LUA_USE_POSIX)	/* { */
+#if defined(LUA_USE_POSIX) || defined(LUA_USE_BROWSER)	/* { */
 
 #define l_gmtime(t,r)		gmtime_r(t,r)
 #define l_localtime(t,r)	localtime_r(t,r)
@@ -118,6 +118,12 @@
         if (e != -1) close(e); \
         e = (e == -1); }
 
+#elif defined(LUA_USE_BROWSER)	/* }{ */
+
+/* A browser image has no filesystem in which to reserve a name. */
+#define LUA_TMPNAMBUFSIZE	1
+#define lua_tmpnam(b,e)		{ (void)(b); e = 1; }
+
 #else				/* }{ */
 
 /* ISO C definitions */
@@ -131,8 +137,9 @@
 
 
 #if !defined(l_system)
-#if defined(LUA_USE_IOS)
-/* Despite claiming to be ISO C, iOS does not implement 'system'. */
+#if defined(LUA_USE_IOS) || defined(LUA_USE_BROWSER)
+/* Despite claiming to be ISO C, iOS does not implement 'system', and a
+** browser image has no shell. */
 #define l_system(cmd) ((cmd) == NULL ? 0 : -1)
 #else
 #define l_system(cmd)	system(cmd)  /* default definition */

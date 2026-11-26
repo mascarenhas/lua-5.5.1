@@ -29,8 +29,6 @@
 #   FORK_REVISION=<40-hex commit> make install-browser PREFIX=/some/prefix
 
 set -eu
-# This script is also callable directly, outside the browser Make targets.
-unset EMCC_CFLAGS
 
 fail() {
 	printf 'install-browser: %s\n' "$*" >&2
@@ -73,7 +71,7 @@ root=
 headers=
 cc=
 target=
-emscripten_version=
+wasi_sdk_version=
 sjlj=
 cflags=
 # Duplicate detection tracks the keys themselves, not their values: an empty
@@ -107,9 +105,9 @@ while IFS= read -r line || [ -n "$line" ]; do
 	browser_target=*)
 		take browser_target
 		target=$(trim "${line#browser_target=}") ;;
-	browser_emscripten_version=*)
-		take browser_emscripten_version
-		emscripten_version=$(trim "${line#browser_emscripten_version=}") ;;
+	browser_wasi_sdk_version=*)
+		take browser_wasi_sdk_version
+		wasi_sdk_version=$(trim "${line#browser_wasi_sdk_version=}") ;;
 	browser_sjlj=*)
 		take browser_sjlj
 		sjlj=$(trim "${line#browser_sjlj=}") ;;
@@ -127,8 +125,8 @@ done <"$tmp/config"
 [ -n "$headers" ] || fail "the build configuration is missing 'browser_headers'"
 [ -n "$cc" ] || fail "the build configuration is missing 'browser_cc'"
 [ -n "$target" ] || fail "the build configuration is missing 'browser_target'"
-[ -n "$emscripten_version" ] ||
-	fail "the build configuration is missing 'browser_emscripten_version'"
+[ -n "$wasi_sdk_version" ] ||
+	fail "the build configuration is missing 'browser_wasi_sdk_version'"
 [ -n "$sjlj" ] || fail "the build configuration is missing 'browser_sjlj'"
 [ -n "$cflags" ] || fail "the build configuration is missing 'browser_cflags'"
 
@@ -139,16 +137,15 @@ root_abs=$(cd "$src_abs/$root" 2>/dev/null && pwd) || root_abs=
 
 # ---- toolchain --------------------------------------------------------------
 
-command -v "$cc" >/dev/null 2>&1 || fail \
-	"'$cc' is not on PATH, but the browser target requires Emscripten $emscripten_version; install it with 'emsdk install $emscripten_version && emsdk activate $emscripten_version' and source emsdk_env.sh"
-
-banner=$("$cc" --version 2>/dev/null | head -n 1 || true)
-found=$(printf '%s\n' "$banner" |
-	sed -n 's/.*) \([0-9][0-9.]*\).*/\1/p')
+# A wasi-sdk names its release in the first line of VERSION, beside bin/.
+remedy="install wasi-sdk-$wasi_sdk_version from https://github.com/WebAssembly/wasi-sdk/releases and pass BROWSER_CC=<sdk>/bin/clang or put <sdk>/bin first on PATH"
+cc_path=$(command -v "$cc" 2>/dev/null) || fail \
+	"'$cc' is not on PATH, but the browser target requires wasi-sdk $wasi_sdk_version; $remedy"
+found=$(sed -n 1p "${cc_path%/*}/../VERSION" 2>/dev/null || true)
 [ -n "$found" ] ||
-	fail "cannot read the Emscripten version from '$cc --version' (it printed '$banner')"
-[ "$found" = "$emscripten_version" ] || fail \
-	"'$cc' reports Emscripten $found, but the browser target requires $emscripten_version; install it with 'emsdk install $emscripten_version && emsdk activate $emscripten_version' and source emsdk_env.sh"
+	fail "cannot read the wasi-sdk version: '$cc_path' has no ../VERSION file; $remedy"
+[ "$found" = "$wasi_sdk_version" ] || fail \
+	"'$cc_path' belongs to wasi-sdk $found, but the browser target requires $wasi_sdk_version; $remedy"
 
 if command -v sha256sum >/dev/null 2>&1; then
 	# Reading from stdin keeps the pathname out of the output, so a path
@@ -194,15 +191,15 @@ esac
 
 # ---- the compile flags, defines and numeric configuration -------------------
 
-# The effective values, as the compiler and emcc actually resolve these flags:
-# for both, a later occurrence replaces an earlier one.  emcc accepts
-# '-sNAME=VALUE' and '-s NAME=VALUE', and both change code generation, so both
-# spellings are read here.
+# The effective values, as clang resolves these flags: a later occurrence
+# replaces an earlier one, and '-mllvm OPTION' passes OPTION to the backend.
 cflags_normalized=
 defines=
-longjmp=
-legacy_exceptions=
-eh_flags=
+flag_target=
+eh=
+wasm_sjlj=
+legacy_eh=
+js_sjlj=
 pic_flags=
 previous=
 for flag in $cflags; do
@@ -210,24 +207,20 @@ for flag in $cflags; do
 	case $flag in
 	-D*) defines=${defines:+$defines }$flag ;;
 	-fPIC | -fpic | -fPIE | -fpie) pic_flags="$pic_flags $flag" ;;
-	-fwasm-exceptions | -fno-wasm-exceptions | -mexception-handling | \
-	-mno-exception-handling | -mlegacy-exception-handling | \
-	-mno-legacy-exception-handling) eh_flags="$eh_flags $flag" ;;
+	--target=*) flag_target=${flag#--target=} ;;
+	-mexception-handling) eh=1 ;;
+	-mno-exception-handling) eh=0 ;;
 	esac
-	setting=
-	case $flag in
-	-s?*) setting=${flag#-s} ;;
-	*) if [ "$previous" = "-s" ]; then setting=$flag; fi ;;
-	esac
-	case $setting in
-	SUPPORT_LONGJMP | SUPPORT_LONGJMP=1 | NO_SUPPORT_LONGJMP=0) longjmp=emscripten ;;
-	SUPPORT_LONGJMP=*) longjmp=${setting#*=} ;;
-	NO_SUPPORT_LONGJMP | NO_SUPPORT_LONGJMP=*) longjmp=0 ;;
-	WASM_LEGACY_EXCEPTIONS | WASM_LEGACY_EXCEPTIONS=1 | \
-	NO_WASM_LEGACY_EXCEPTIONS=0) legacy_exceptions=1 ;;
-	WASM_LEGACY_EXCEPTIONS=*) legacy_exceptions=${setting#*=} ;;
-	NO_WASM_LEGACY_EXCEPTIONS | NO_WASM_LEGACY_EXCEPTIONS=*) legacy_exceptions=0 ;;
-	esac
+	if [ "$previous" = -target ]; then flag_target=$flag; fi
+	if [ "$previous" = -mllvm ]; then
+		case $flag in
+		-wasm-enable-sjlj | -wasm-enable-sjlj=true | -wasm-enable-sjlj=1) wasm_sjlj=1 ;;
+		-wasm-enable-sjlj=*) wasm_sjlj=0 ;;
+		-wasm-use-legacy-eh=false | -wasm-use-legacy-eh=0) legacy_eh=0 ;;
+		-wasm-use-legacy-eh | -wasm-use-legacy-eh=*) legacy_eh=1 ;;
+		-enable-emscripten-sjlj*) js_sjlj=1 ;;
+		esac
+	fi
 	previous=$flag
 done
 if [ -n "$defines" ]; then
@@ -235,18 +228,14 @@ if [ -n "$defines" ]; then
 else
 	lua_defines=
 fi
-# The record states one longjmp mode for the archive, so the effective one --
-# the last -s flag emcc sees -- must be that mode.  A caller-owned MYCFLAGS that
-# appends another mode would otherwise be certified as this one.
-[ "$sjlj" = wasm ] || fail "the browser build requires sjlj=wasm, not sjlj=$sjlj"
-[ -n "$longjmp" ] || fail \
-	"the browser build must compile with -sSUPPORT_LONGJMP=$sjlj; the compile flags are: $cflags_normalized"
-[ "$longjmp" = "$sjlj" ] || fail \
-	"the browser build resolves -sSUPPORT_LONGJMP=$longjmp, but the build record would state sjlj=$sjlj; the compile flags are: $cflags_normalized"
-[ "$legacy_exceptions" = 1 ] || fail \
-	"the browser build requires explicit -sWASM_LEGACY_EXCEPTIONS=1; the effective setting is '${legacy_exceptions:-missing}'; the compile flags are: $cflags_normalized"
-[ -z "$eh_flags" ] || fail \
-	"the browser build owns Wasm exception lowering; remove native exception flags ($eh_flags)"
+# The record states one target and one longjmp mode for the archive, so the
+# effective ones -- the last flags clang sees -- must be those.  A caller-owned
+# MYCFLAGS that appends another would otherwise be certified as this one.
+[ "$flag_target" = "$target" ] || fail \
+	"the browser build must compile with --target=$target, but the effective target is '${flag_target:-the compiler default}'; the compile flags are: $cflags_normalized"
+[ "$sjlj" = wasm-exnref ] || fail "the browser build requires sjlj=wasm-exnref, not sjlj=$sjlj"
+[ "$eh" = 1 ] && [ "$wasm_sjlj" = 1 ] && [ "$legacy_eh" = 0 ] && [ -z "$js_sjlj" ] || fail \
+	"sjlj=$sjlj requires -mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false as the effective settings, and no JavaScript longjmp lowering; the compile flags are: $cflags_normalized"
 [ -z "$pic_flags" ] || fail \
 	"the browser build must not compile position-independent objects ($pic_flags): a PIC Wasm object imports GOT.mem/GOT.func, which a static object reader rejects; the compile flags are: $cflags_normalized"
 
@@ -267,8 +256,9 @@ has_define() {
 		awk -v name="$1" \
 			'$1 == "#define" && $2 == name { found = 1 } END { exit !found }'
 }
-has_define LUA_USE_POSIX || fail \
-	"the effective Lua configuration must define LUA_USE_POSIX; the compile flags are: $cflags_normalized"
+if has_define LUA_USE_POSIX; then
+	fail "the effective Lua configuration must not define LUA_USE_POSIX: wasi-libc has no signals, processes, popen or mkstemp; the compile flags are: $cflags_normalized"
+fi
 has_define LUA_USE_BROWSER || fail \
 	"the effective Lua configuration must define LUA_USE_BROWSER, which selects browser package paths; a later -U or an indirect -DLUA_USE_LINUX/-DLUA_USE_MACOSX changes it. The compile flags are: $cflags_normalized"
 if has_define LUA_USE_DLOPEN; then
@@ -362,11 +352,11 @@ headers_sha256=$(sha256_file "$tmp/headers.sorted")
 # ---- the record -------------------------------------------------------------
 
 {
-	printf '%s\n' '# Lua 5.5.1 browser build record v1'
+	printf '%s\n' '# Lua 5.5.1 browser build record v2'
 	printf 'fork_revision=%s\n' "$revision"
 	printf 'archive_sha256=%s\n' "$archive_sha256"
 	printf 'headers_sha256=%s\n' "$headers_sha256"
-	printf 'emscripten_version=%s\n' "$emscripten_version"
+	printf 'wasi_sdk_version=%s\n' "$wasi_sdk_version"
 	printf 'target=%s\n' "$target"
 	printf 'wasm_features=%s\n' "$wasm_features"
 	printf 'sjlj=%s\n' "$sjlj"
@@ -379,4 +369,4 @@ chmod 644 "$dest/liblua-config.txt"
 header_count=$(printf '%s\n' $installed_headers | wc -l | tr -d ' ')
 say "installed $dest/liblua.a (sha256 $archive_sha256)"
 say "installed $header_count headers in $include_dir (digest $headers_sha256)"
-say "wrote $dest/liblua-config.txt (fork revision $revision, Emscripten $emscripten_version)"
+say "wrote $dest/liblua-config.txt (fork revision $revision, wasi-sdk $wasi_sdk_version)"
