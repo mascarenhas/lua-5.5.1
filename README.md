@@ -161,7 +161,7 @@ cflags=<effective compile flags>
 | `wasi_sdk_version` | The pin, checked against the first line of the recording compiler's `../VERSION` during the install. |
 | `target` | The physical ABI/toolchain triple, which must also be the effective `--target` of `cflags`. |
 | `wasm_features` | The `target_features` entries of an object compiled with these flags: space-separated `+name`/`-name` tokens, ascending byte order of the token. |
-| `sjlj` | The longjmp mode the archive was compiled with, `wasm-exnref`: Wasm exception handling (`-mexception-handling`) with LLVM's Wasm longjmp lowering (`-mllvm -wasm-enable-sjlj`) and the standard encoding (`-mllvm -wasm-use-legacy-eh=false`), each the last occurrence clang sees. Emscripten's JavaScript longjmp lowering (`-mllvm -enable-emscripten-sjlj`) is rejected. |
+| `sjlj` | The longjmp mode the archive was compiled with, `wasm-exnref`: Wasm exception handling (`-mexception-handling`) with LLVM's Wasm longjmp lowering (`-mllvm -wasm-enable-sjlj`) and the standard encoding (`-mllvm -wasm-use-legacy-eh=false`). These two are the only backend options `cflags` may pass, each once and in the separate `-mllvm OPTION` spelling, which is what Titan's compiler accepts in a record. |
 | `lua_defines` | The `-D` flags of `cflags`, sorted with `LC_ALL=C sort -u`, space-separated. |
 | `numeric` | `integer=<C type of LUA_INTEGER>,float=<C type of LUA_NUMBER>`, as the preprocessor expands them from the installed `luaconf.h`. |
 | `cflags` | The effective compile flags for every object in the archive, whitespace-normalized to single spaces, in compiler order, including `MYCFLAGS` and `CMCFLAGS`. |
@@ -217,11 +217,14 @@ toolchain configuration which a consumer's objects must match.
   caller flag, defines `LUA_USE_POSIX` or `LUA_USE_DLOPEN` (directly, through
   an assignment or through an indirect `LUA_USE_LINUX`), or does not define
   `LUA_USE_BROWSER`;
-- the effective `--target` differs from the recorded `target`;
-- the recorded `sjlj` is not `wasm-exnref`, or the effective flags do not
-  select it, including a later `-mno-exception-handling`, a disabled
-  `-wasm-enable-sjlj`, a legacy `-wasm-use-legacy-eh`, or Emscripten's
-  JavaScript longjmp lowering;
+- the effective `--target` differs from the recorded `target`, or the flags
+  use the separate `-target TRIPLE` spelling;
+- the recorded `sjlj` is not `wasm-exnref`; the flags lack
+  `-mexception-handling`, or their `-mllvm` options are not exactly
+  `-wasm-enable-sjlj` and `-wasm-use-legacy-eh=false`; or the flags use the
+  joined `-mllvm=OPTION` spelling or another exception switch
+  (`-mno-exception-handling`, `-m[no-]legacy-exception-handling`,
+  `-f[no-]wasm-exceptions`);
 - the flags request position-independent objects (`-fPIC`, `-fpic`, `-fPIE`,
   `-fpie`);
 - `luaconf.h` cannot be preprocessed, or does not define `LUA_INTEGER` or

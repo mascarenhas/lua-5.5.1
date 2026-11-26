@@ -191,51 +191,53 @@ esac
 
 # ---- the compile flags, defines and numeric configuration -------------------
 
-# The effective values, as clang resolves these flags: a later occurrence
-# replaces an earlier one, and '-mllvm OPTION' passes OPTION to the backend.
+# The record states one target and one longjmp lowering for the archive, and
+# Titan accepts exactly these spellings of them: --target=TRIPLE (the last one
+# wins), -mexception-handling, and the two '-mllvm OPTION' pairs below with no
+# other backend option.  Clang also reads '-mllvm=OPTION', '-target TRIPLE'
+# and other exception switches, so a caller-owned MYCFLAGS could otherwise
+# change the lowering behind a record that certifies this one.
 cflags_normalized=
 defines=
 flag_target=
 eh=
-wasm_sjlj=
-legacy_eh=
-js_sjlj=
+backend=
+owned=
 pic_flags=
 previous=
 for flag in $cflags; do
 	cflags_normalized=${cflags_normalized:+$cflags_normalized }$flag
+	if [ "$previous" = -mllvm ]; then
+		backend="$backend$flag
+"
+		previous=
+		continue
+	fi
 	case $flag in
 	-D*) defines=${defines:+$defines }$flag ;;
 	-fPIC | -fpic | -fPIE | -fpie) pic_flags="$pic_flags $flag" ;;
 	--target=*) flag_target=${flag#--target=} ;;
 	-mexception-handling) eh=1 ;;
-	-mno-exception-handling) eh=0 ;;
+	-mllvm=* | -target | -mno-exception-handling | -mlegacy-exception-handling | \
+	-mno-legacy-exception-handling | -fwasm-exceptions | -fno-wasm-exceptions)
+		owned="$owned $flag" ;;
 	esac
-	if [ "$previous" = -target ]; then flag_target=$flag; fi
-	if [ "$previous" = -mllvm ]; then
-		case $flag in
-		-wasm-enable-sjlj | -wasm-enable-sjlj=true | -wasm-enable-sjlj=1) wasm_sjlj=1 ;;
-		-wasm-enable-sjlj=*) wasm_sjlj=0 ;;
-		-wasm-use-legacy-eh=false | -wasm-use-legacy-eh=0) legacy_eh=0 ;;
-		-wasm-use-legacy-eh | -wasm-use-legacy-eh=*) legacy_eh=1 ;;
-		-enable-emscripten-sjlj*) js_sjlj=1 ;;
-		esac
-	fi
 	previous=$flag
 done
+[ "$previous" != -mllvm ] || owned="$owned -mllvm"
+backend=$(printf '%s' "$backend" | LC_ALL=C sort | paste -sd ' ' -)
 if [ -n "$defines" ]; then
 	lua_defines=$(printf '%s\n' $defines | LC_ALL=C sort -u | paste -sd ' ' -)
 else
 	lua_defines=
 fi
-# The record states one target and one longjmp mode for the archive, so the
-# effective ones -- the last flags clang sees -- must be those.  A caller-owned
-# MYCFLAGS that appends another would otherwise be certified as this one.
+[ -z "$owned" ] || fail \
+	"the browser build owns the target and Wasm exception lowering; remove$owned; the compile flags are: $cflags_normalized"
 [ "$flag_target" = "$target" ] || fail \
 	"the browser build must compile with --target=$target, but the effective target is '${flag_target:-the compiler default}'; the compile flags are: $cflags_normalized"
 [ "$sjlj" = wasm-exnref ] || fail "the browser build requires sjlj=wasm-exnref, not sjlj=$sjlj"
-[ "$eh" = 1 ] && [ "$wasm_sjlj" = 1 ] && [ "$legacy_eh" = 0 ] && [ -z "$js_sjlj" ] || fail \
-	"sjlj=$sjlj requires -mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false as the effective settings, and no JavaScript longjmp lowering; the compile flags are: $cflags_normalized"
+[ "$eh" = 1 ] && [ "$backend" = "-wasm-enable-sjlj -wasm-use-legacy-eh=false" ] || fail \
+	"sjlj=$sjlj requires -mexception-handling, -mllvm -wasm-enable-sjlj and -mllvm -wasm-use-legacy-eh=false, with no other -mllvm option; the compile flags are: $cflags_normalized"
 [ -z "$pic_flags" ] || fail \
 	"the browser build must not compile position-independent objects ($pic_flags): a PIC Wasm object imports GOT.mem/GOT.func, which a static object reader rejects; the compile flags are: $cflags_normalized"
 
