@@ -191,12 +191,15 @@ esac
 
 # ---- the compile flags, defines and numeric configuration -------------------
 
-# The record states one target and one longjmp lowering for the archive, and
+# The record states one target, ABI and longjmp lowering for the archive, and
 # Titan accepts exactly these spellings of them: --target=TRIPLE (the last one
 # wins), -mexception-handling, and the two '-mllvm OPTION' pairs below with no
-# other backend option.  Clang also reads '-mllvm=OPTION', '-target TRIPLE'
-# and other exception switches, so a caller-owned MYCFLAGS could otherwise
-# change the lowering behind a record that certifies this one.
+# other backend option.  Every other flag in the refused list below is one
+# Titan's compiler refuses in a record's cflags (browsertarget.validate_flags):
+# it changes the target, ABI or exception lowering, or, like '-mllvm=OPTION',
+# '-Xclang', '--config' and '@file', carries backend options, so a caller-owned
+# MYCFLAGS could otherwise change the lowering behind a record that certifies
+# this one, or leave a record the compiler cannot use.
 cflags_normalized=
 defines=
 flag_target=
@@ -219,7 +222,10 @@ for flag in $cflags; do
 	--target=*) flag_target=${flag#--target=} ;;
 	-mexception-handling) eh=1 ;;
 	-mllvm=* | -target | -mno-exception-handling | -mlegacy-exception-handling | \
-	-mno-legacy-exception-handling | -fwasm-exceptions | -fno-wasm-exceptions)
+	-mno-legacy-exception-handling | -fwasm-exceptions | -fno-wasm-exceptions | \
+	-Xclang* | --config* | @* | -pie | -shared | -dynamiclib | -rdynamic | \
+	-pthread | -ffat-lto-objects | -m32 | -m64 | -flto | -flto=* | -march=* | \
+	-mcpu=* | -mtune=* | --sysroot* | -mexec-model*)
 		owned="$owned $flag" ;;
 	esac
 	previous=$flag
@@ -232,7 +238,7 @@ else
 	lua_defines=
 fi
 [ -z "$owned" ] || fail \
-	"the browser build owns the target and Wasm exception lowering; remove$owned; the compile flags are: $cflags_normalized"
+	"the browser build owns the target, ABI and Wasm exception lowering; remove$owned; the compile flags are: $cflags_normalized"
 [ "$flag_target" = "$target" ] || fail \
 	"the browser build must compile with --target=$target, but the effective target is '${flag_target:-the compiler default}'; the compile flags are: $cflags_normalized"
 [ "$sjlj" = wasm-exnref ] || fail "the browser build requires sjlj=wasm-exnref, not sjlj=$sjlj"

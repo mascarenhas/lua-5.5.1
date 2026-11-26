@@ -217,16 +217,21 @@ toolchain configuration which a consumer's objects must match.
   caller flag, defines `LUA_USE_POSIX` or `LUA_USE_DLOPEN` (directly, through
   an assignment or through an indirect `LUA_USE_LINUX`), or does not define
   `LUA_USE_BROWSER`;
-- the effective `--target` differs from the recorded `target`, or the flags
-  use the separate `-target TRIPLE` spelling;
-- the recorded `sjlj` is not `wasm-exnref`; the flags lack
+- the effective `--target` differs from the recorded `target`;
+- the recorded `sjlj` is not `wasm-exnref`, the flags lack
   `-mexception-handling`, or their `-mllvm` options are not exactly
-  `-wasm-enable-sjlj` and `-wasm-use-legacy-eh=false`; or the flags use the
-  joined `-mllvm=OPTION` spelling or another exception switch
-  (`-mno-exception-handling`, `-m[no-]legacy-exception-handling`,
-  `-f[no-]wasm-exceptions`);
+  `-wasm-enable-sjlj` and `-wasm-use-legacy-eh=false`;
 - the flags request position-independent objects (`-fPIC`, `-fpic`, `-fPIE`,
   `-fpie`);
+- the flags contain any other option Titan's compiler refuses in a record
+  (`browsertarget.validate_flags`), because it changes the target, ABI or
+  exception lowering or can carry backend options: the joined
+  `-mllvm=OPTION`, `-Xclang…`, `--config…` and `@file`; `-target`,
+  `--sysroot…` and `-mexec-model…`; `-mno-exception-handling`,
+  `-m[no-]legacy-exception-handling` and `-f[no-]wasm-exceptions`; `-pie`,
+  `-shared`, `-dynamiclib`, `-rdynamic`, `-pthread`, `-m32` and `-m64`;
+  `-flto`, `-flto=…` and `-ffat-lto-objects`; `-march=…`, `-mcpu=…` and
+  `-mtune=…`;
 - `luaconf.h` cannot be preprocessed, or does not define `LUA_INTEGER` or
   `LUA_NUMBER`;
 - the feature probe cannot be compiled, or declares no features;
