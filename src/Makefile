@@ -261,22 +261,15 @@ mingw:
 # browser build, and rewrites the stamp only when the configuration changed.
 browser-config-changed:
 
-# Browser recipes and their recursive makes must use only the recorded flags:
-# clang reads extra options, include and library directories and the tools it
-# runs from these variables. Target-specific export leaves native goals'
-# environment unchanged.
-BROWSER_GOALS= browser browser-version-check browser-js browser-test \
-	browser-config browser-echo
-$(BROWSER_GOALS): export CCC_OVERRIDE_OPTIONS =
-$(BROWSER_GOALS): export CPATH =
-$(BROWSER_GOALS): export C_INCLUDE_PATH =
-$(BROWSER_GOALS): export CPLUS_INCLUDE_PATH =
-$(BROWSER_GOALS): export OBJC_INCLUDE_PATH =
-$(BROWSER_GOALS): export LIBRARY_PATH =
-$(BROWSER_GOALS): export COMPILER_PATH =
+# The recursive makes that compile and link the browser objects must use only
+# the recorded flags: clang reads extra options, include and library
+# directories and the tools it runs from these variables, so they run with
+# the variables unset. Native goals keep their environment.
+BROWSER_ENV= env -u CCC_OVERRIDE_OPTIONS -u CPATH -u C_INCLUDE_PATH \
+	-u CPLUS_INCLUDE_PATH -u OBJC_INCLUDE_PATH -u LIBRARY_PATH -u COMPILER_PATH
 
 browser: browser-version-check
-	@$(MAKE) $(BROWSER_A) $(BROWSER_FLAGS)
+	@$(BROWSER_ENV) $(MAKE) $(BROWSER_A) $(BROWSER_FLAGS)
 
 # A bare compiler name resolves through PATH; either way, the compiler's
 # bin/ directory must sit in the pinned wasi-sdk.
@@ -293,7 +286,7 @@ browser-version-check:
 	fi
 
 browser-js: browser-version-check
-	@$(MAKE) $(BROWSER_LUA) $(BROWSER_FLAGS)
+	@$(BROWSER_ENV) $(MAKE) $(BROWSER_LUA) $(BROWSER_FLAGS)
 
 browser-test: browser-js
 	@$(NODE) ../tools/browser-lua.mjs $(BROWSER_LUA) -v
