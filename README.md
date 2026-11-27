@@ -88,8 +88,12 @@ independent of coroutine stack switching. The browser-only
 
 Without `LUA_USE_POSIX`, the browser build also guards the few library
 functions wasi-libc lacks: `os.date` and `os.time` use `gmtime_r` and
-`localtime_r`, `os.tmpname` fails ("unable to generate a unique filename"),
-`io.tmpfile` fails with `ENOSYS`, and `os.execute` reports no shell.
+`localtime_r`, and `os.execute` reports no shell. `os.tmpname` and
+`io.tmpfile` create a new `/tmp/lua_XXXXXXXXXXXX` file with
+`O_CREAT|O_EXCL` (`luaL_browsertmpfd`), always under `/tmp` and never
+`TMPDIR`; `io.tmpfile` unlinks it at once. Without a `/tmp` in the host's
+filesystem, `io.tmpfile` fails with the host's `errno` and `os.tmpname`
+raises "unable to generate a unique filename".
 
 The browser objects depend on every header they compile against, and they
 record the configuration and the member list that produced them
