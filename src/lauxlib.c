@@ -310,69 +310,6 @@ LUALIB_API int luaL_execresult (lua_State *L, int stat) {
 
 /*
 ** {======================================================
-** Temporary files for the browser
-** =======================================================
-*/
-#if defined(LUA_USE_BROWSER)	/* { */
-
-#include <fcntl.h>
-#include <stdint.h>
-#include <time.h>
-#include <unistd.h>
-
-/* name collisions to retry before failing with EEXIST */
-#define TMPFDTRIES	64
-
-/*
-** Create a new file '/tmp/lua_XXXXXXXXXXXX' (O_EXCL, mode 0600) for
-** 'io.tmpfile' and 'os.tmpname', write its name into 'buf' (at least
-** LUAL_BROWSERTMPSIZE bytes) and return its descriptor, or -1 with
-** 'errno' set.  wasi-libc has no 'mkstemp' and random bytes would cost
-** an entropy import, so each candidate scrambles a counter (SplitMix64)
-** with the clock, when there is one.  Only a name collision retries.
-** The directory is always /tmp, never TMPDIR, so a durable mount never
-** receives these files.  With 'unlinked', the name is removed at once:
-** the result is an anonymous file or -1, never a file with a name.
-*/
-LUALIB_API int luaL_browsertmpfd (char *buf, int unlinked) {
-  static uint64_t seq = 0;
-  uint64_t clk = 0;
-  struct timespec ts;
-  int tries;
-  if (clock_gettime(CLOCK_REALTIME, &ts) == 0)
-    clk = ((uint64_t)ts.tv_sec << 32) ^ (uint64_t)ts.tv_nsec;
-  for (tries = 0; tries < TMPFDTRIES; tries++) {
-    uint64_t x = (++seq * 0x9e3779b97f4a7c15ULL) ^ clk;
-    int fd;
-    x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
-    x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
-    x ^= x >> 31;
-    snprintf(buf, LUAL_BROWSERTMPSIZE, "/tmp/lua_%012llx",
-             (unsigned long long)(x >> 16));
-    fd = open(buf, O_RDWR | O_CREAT | O_EXCL, 0600);
-    if (fd != -1) {
-      if (unlinked && unlink(buf) != 0) {
-        int en = errno;  /* 'close' may change it */
-        (void)close(fd);
-        errno = en;
-        return -1;
-      }
-      return fd;
-    }
-    if (errno != EEXIST)  /* no /tmp, no filesystem, ...? */
-      return -1;
-  }
-  errno = EEXIST;
-  return -1;
-}
-
-#endif				/* } */
-/* }====================================================== */
-
-
-
-/*
-** {======================================================
 ** Userdata's metatable manipulation
 ** =======================================================
 */

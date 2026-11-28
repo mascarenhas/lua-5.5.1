@@ -86,14 +86,14 @@ flag cannot change the longjmp lowering of an old object. This choice is
 independent of coroutine stack switching. The browser-only
 `LUAI_MAXCCALLS=100` limit remains unchanged; native targets retain 200.
 
-Without `LUA_USE_POSIX`, the browser build also guards the few library
-functions wasi-libc lacks: `os.date` and `os.time` use `gmtime_r` and
-`localtime_r`, and `os.execute` reports no shell. `os.tmpname` and
-`io.tmpfile` create a new `/tmp/lua_XXXXXXXXXXXX` file with
-`O_CREAT|O_EXCL` (`luaL_browsertmpfd`), always under `/tmp` and never
-`TMPDIR`; `io.tmpfile` unlinks it at once. Without a `/tmp` in the host's
-filesystem, `io.tmpfile` fails with the host's `errno` and `os.tmpname`
-raises "unable to generate a unique filename".
+Without `LUA_USE_POSIX`, wasi-libc lacks a few facilities the standard
+library would use. `src/luaconf.h` covers them under `LUA_USE_BROWSER`, so
+`src/lauxlib.c`, `src/lauxlib.h`, `src/liolib.c` and `src/loslib.c` are
+unmodified stock Lua 5.5.1: `os.date` and `os.time` use `gmtime_r` and
+`localtime_r`, `os.execute` reports no shell, `os.tmpname` fails ("unable to
+generate a unique filename") and `io.tmpfile` fails with `ENOSYS`. Titan's
+browser runtime replaces `io.tmpfile` and `os.tmpname` in every Lua state it
+opens with versions that create their files under the guest's `/tmp`.
 
 The browser objects depend on every header they compile against, and they
 record the configuration and the member list that produced them
