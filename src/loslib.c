@@ -75,7 +75,7 @@
 ** where it uses gmtime_r/localtime_r
 */
 
-#if defined(LUA_USE_POSIX) || defined(LUA_USE_BROWSER)	/* { */
+#if defined(LUA_USE_POSIX)	/* { */
 
 #define l_gmtime(t,r)		gmtime_r(t,r)
 #define l_localtime(t,r)	localtime_r(t,r)
@@ -118,23 +118,6 @@
         if (e != -1) close(e); \
         e = (e == -1); }
 
-#elif defined(LUA_USE_BROWSER)	/* }{ */
-
-#include <unistd.h>
-
-/* Reserve a name under /tmp; see 'luaL_browsertmpfd'. */
-#define LUA_TMPNAMBUFSIZE	LUAL_BROWSERTMPSIZE
-
-#define lua_tmpnam(b,e) { \
-        int fd_ = luaL_browsertmpfd(b, 0); \
-        if (fd_ == -1) e = 1; \
-        else if (close(fd_) != 0) { \
-          int en_ = errno;  /* drop the name, keep the 'close' error */ \
-          (void)unlink(b); \
-          errno = en_; \
-          e = 1; } \
-        else e = 0; }
-
 #else				/* }{ */
 
 /* ISO C definitions */
@@ -148,9 +131,8 @@
 
 
 #if !defined(l_system)
-#if defined(LUA_USE_IOS) || defined(LUA_USE_BROWSER)
-/* Despite claiming to be ISO C, iOS does not implement 'system', and a
-** browser image has no shell. */
+#if defined(LUA_USE_IOS)
+/* Despite claiming to be ISO C, iOS does not implement 'system'. */
 #define l_system(cmd) ((cmd) == NULL ? 0 : -1)
 #else
 #define l_system(cmd)	system(cmd)  /* default definition */

@@ -89,6 +89,28 @@
 #endif
 
 
+/*
+** The browser (WebAssembly) target builds against wasi-libc without
+** LUA_USE_POSIX: it has 'gmtime_r' and 'localtime_r', but no shell, no
+** 'mkstemp' and no 'tmpfile'.  These definitions replace the library
+** defaults, so the library sources stay stock Lua: 'os.execute' reports
+** no shell, 'os.tmpname' always fails and 'io.tmpfile' fails with ENOSYS.
+** An embedder with a filesystem (Titan's browser runtime) installs its
+** own 'io.tmpfile' and 'os.tmpname'.  'liolib.c' includes <errno.h> and
+** <stdio.h> before this header.
+*/
+#if defined(LUA_USE_BROWSER)
+#define l_gmtime(t,r)		gmtime_r(t,r)
+#define l_localtime(t,r)	localtime_r(t,r)
+#define l_system(cmd)		((cmd) == NULL ? 0 : -1)
+#define LUA_TMPNAMBUFSIZE	1
+#define lua_tmpnam(b,e)		{ (void)(b); e = 1; }
+#if defined(liolib_c)
+#define tmpfile()		((errno = ENOSYS), (FILE *)NULL)
+#endif
+#endif
+
+
 #if defined(LUA_USE_C89) && defined(LUA_USE_POSIX)
 #error "POSIX is not compatible with C89"
 #endif

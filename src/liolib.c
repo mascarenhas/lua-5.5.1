@@ -299,27 +299,10 @@ static int io_popen (lua_State *L) {
 }
 
 
-#if defined(LUA_USE_BROWSER)
-#include <unistd.h>
-#endif
-
-
 static int io_tmpfile (lua_State *L) {
   LStream *p = newfile(L);
   errno = 0;
-#if defined(LUA_USE_BROWSER)
-  {  /* an anonymous file under /tmp; see 'luaL_browsertmpfd' */
-    char buff[LUAL_BROWSERTMPSIZE];
-    int fd = luaL_browsertmpfd(buff, 1);
-    if (fd != -1 && (p->f = fdopen(fd, "w+")) == NULL) {
-      int en = errno;  /* 'close' may change it */
-      (void)close(fd);
-      errno = en;
-    }
-  }
-#else
   p->f = tmpfile();
-#endif
   return (p->f == NULL) ? luaL_fileresult(L, 0, NULL) : 1;
 }
 
