@@ -120,9 +120,20 @@
 
 #elif defined(LUA_USE_BROWSER)	/* }{ */
 
-/* A browser image has no filesystem in which to reserve a name. */
-#define LUA_TMPNAMBUFSIZE	1
-#define lua_tmpnam(b,e)		{ (void)(b); e = 1; }
+#include <unistd.h>
+
+/* Reserve a name under /tmp; see 'luaL_browsertmpfd'. */
+#define LUA_TMPNAMBUFSIZE	LUAL_BROWSERTMPSIZE
+
+#define lua_tmpnam(b,e) { \
+        int fd_ = luaL_browsertmpfd(b, 0); \
+        if (fd_ == -1) e = 1; \
+        else if (close(fd_) != 0) { \
+          int en_ = errno;  /* drop the name, keep the 'close' error */ \
+          (void)unlink(b); \
+          errno = en_; \
+          e = 1; } \
+        else e = 0; }
 
 #else				/* }{ */
 

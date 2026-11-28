@@ -241,6 +241,16 @@ typedef struct luaL_Stream {
   lua_CFunction closef;  /* to close stream (NULL for closed streams) */
 } luaL_Stream;
 
+#if defined(LUA_USE_BROWSER)
+/*
+** The browser's temporary files ('io.tmpfile', 'os.tmpname'): a new
+** file under /tmp, its name in a buffer of LUAL_BROWSERTMPSIZE bytes.
+*/
+#define LUAL_BROWSERTMPSIZE	32
+
+LUALIB_API int (luaL_browsertmpfd) (char *buf, int unlinked);
+#endif
+
 /* }====================================================== */
 
 
